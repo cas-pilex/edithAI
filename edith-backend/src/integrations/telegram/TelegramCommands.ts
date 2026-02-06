@@ -1,0 +1,605 @@
+/**
+ * TelegramCommands
+ * Command handlers for Telegram bot
+ */
+
+import { Markup } from 'telegraf';
+import type { TelegramContext } from './TelegramBot.js';
+import { prisma } from '../../database/client.js';
+import { logger } from '../../utils/logger.js';
+import { config } from '../../config/index.js';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+// Command context interface for future use
+interface _CommandContext {
+  userId: string | undefined;
+  isAuthenticated: boolean;
+  telegramId: number;
+  username?: string;
+}
+
+// ============================================================================
+// TelegramCommands Class
+// ============================================================================
+
+class TelegramCommandsImpl {
+  /**
+   * Handle /start command
+   */
+  async handleStart(ctx: TelegramContext): Promise<void> {
+    const user = ctx.from;
+    if (!user) return;
+
+    const firstName = user.first_name;
+
+    if (ctx.session.isAuthenticated) {
+      await ctx.reply(
+        `Welcome back, ${firstName}! 👋\n\n` +
+        `I'm Edith, your AI executive assistant. How can I help you today?\n\n` +
+        `Use /help to see available commands, or just send me a message.`
+      );
+      return;
+    }
+
+    // User not linked yet - provide linking instructions
+    const linkToken = await this.generateLinkToken(user.id);
+
+    await ctx.reply(
+      `Hello ${firstName}! 👋\n\n` +
+      `I'm Edith, your AI executive assistant. To get started, you need to connect your Edith account.\n\n` +
+      `Click the button below or visit:\n` +
+      `${config.server?.apiUrl || 'https://edith.ai'}/connect/telegram?token=${linkToken}\n`,
+      Markup.inlineKeyboard([
+        [Markup.button.url('Connect Account', `${config.server?.apiUrl || 'https://edith.ai'}/connect/telegram?token=${linkToken}`)],
+      ])
+    );
+  }
+
+  /**
+   * Handle /today command - Daily briefing
+   */
+  async handleToday(ctx: TelegramContext): Promise<void> {
+    if (!this.requireAuth(ctx)) return;
+
+    const userId = ctx.session.userId!;
+
+    await ctx.reply('🌅 *Preparing your daily briefing...*', { parse_mode: 'Markdown' });
+
+    try {
+      // In a full implementation, this would:
+      // 1. Fetch today's calendar events
+      // 2. Fetch today's tasks
+      // 3. Get email summary
+      // 4. Get weather (optional)
+
+      // Fetch calendar events
+      const events = await this.getTodayEvents(userId);
+      const tasks = await this.getTodayTasks(userId);
+      const emailSummary = await this.getEmailSummary(userId);
+
+      let message = `☀️ *Your Day at a Glance*\n\n`;
+
+      // Calendar section
+      message += `📅 *Today's Schedule*\n`;
+      if (events.length === 0) {
+        message += `No meetings scheduled today.\n`;
+      } else {
+        for (const event of events.slice(0, 5)) {
+          message += `• ${event.time} - ${event.title}\n`;
+        }
+        if (events.length > 5) {
+          message += `_...and ${events.length - 5} more_\n`;
+        }
+      }
+
+      message += `\n`;
+
+      // Tasks section
+      message += `✅ *Tasks Due Today*\n`;
+      if (tasks.length === 0) {
+        message += `No tasks due today.\n`;
+      } else {
+        for (const task of tasks.slice(0, 5)) {
+          message += `• ${task.priority === 'HIGH' ? '🔴' : '🟡'} ${task.title}\n`;
+        }
+        if (tasks.length > 5) {
+          message += `_...and ${tasks.length - 5} more_\n`;
+        }
+      }
+
+      message += `\n`;
+
+      // Email section
+      message += `📧 *Inbox*\n`;
+      message += `${emailSummary.unread} unread emails`;
+      if (emailSummary.important > 0) {
+        message += ` (${emailSummary.important} important)`;
+      }
+      message += `\n`;
+
+      await ctx.reply(message, {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback('📧 View Inbox', 'view_inbox'),
+            Markup.button.callback('📅 Full Schedule', 'view_schedule'),
+          ],
+          [
+            Markup.button.callback('✅ All Tasks', 'view_tasks'),
+          ],
+        ]),
+      });
+    } catch (error) {
+      logger.error('Failed to generate daily briefing', { userId, error });
+      await ctx.reply('Sorry, I couldn\'t generate your briefing. Please try again.');
+    }
+  }
+
+  /**
+   * Handle /inbox command
+   */
+  async handleInbox(ctx: TelegramContext): Promise<void> {
+    if (!this.requireAuth(ctx)) return;
+
+    const userId = ctx.session.userId!;
+
+    await ctx.reply('📧 *Fetching your inbox...*', { parse_mode: 'Markdown' });
+
+    try {
+      const emails = await this.getRecentEmails(userId);
+
+      if (emails.length === 0) {
+        await ctx.reply('Your inbox is empty! 🎉');
+        return;
+      }
+
+      let message = `📧 *Recent Emails*\n\n`;
+
+      for (const email of emails.slice(0, 5)) {
+        const unreadIcon = email.isRead ? '' : '🔵 ';
+        const importantIcon = email.isImportant ? '⭐ ' : '';
+        message += `${unreadIcon}${importantIcon}*From:* ${email.from}\n`;
+        message += `*Subject:* ${email.subject}\n`;
+        message += `_${email.snippet}_\n\n`;
+      }
+
+      if (emails.length > 5) {
+        message += `_...and ${emails.length - 5} more_`;
+      }
+
+      await ctx.reply(message, {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback('Mark All Read', 'mark_all_read'),
+            Markup.button.callback('Refresh', 'refresh_inbox'),
+          ],
+        ]),
+      });
+    } catch (error) {
+      logger.error('Failed to fetch inbox', { userId, error });
+      await ctx.reply('Sorry, I couldn\'t fetch your inbox. Please try again.');
+    }
+  }
+
+  /**
+   * Handle /tasks command
+   */
+  async handleTasks(ctx: TelegramContext): Promise<void> {
+    if (!this.requireAuth(ctx)) return;
+
+    const userId = ctx.session.userId!;
+
+    await ctx.reply('✅ *Fetching your tasks...*', { parse_mode: 'Markdown' });
+
+    try {
+      const tasks = await this.getAllTasks(userId);
+
+      if (tasks.length === 0) {
+        await ctx.reply('No pending tasks! 🎉');
+        return;
+      }
+
+      let message = `✅ *Your Tasks*\n\n`;
+
+      // Group by priority
+      const highPriority = tasks.filter(t => t.priority === 'HIGH');
+      const normalPriority = tasks.filter(t => t.priority !== 'HIGH');
+
+      if (highPriority.length > 0) {
+        message += `🔴 *High Priority*\n`;
+        for (const task of highPriority.slice(0, 3)) {
+          message += `• ${task.title}`;
+          if (task.dueDate) message += ` (due ${task.dueDate})`;
+          message += `\n`;
+        }
+        message += `\n`;
+      }
+
+      if (normalPriority.length > 0) {
+        message += `🟡 *Other Tasks*\n`;
+        for (const task of normalPriority.slice(0, 5)) {
+          message += `• ${task.title}`;
+          if (task.dueDate) message += ` (due ${task.dueDate})`;
+          message += `\n`;
+        }
+      }
+
+      await ctx.reply(message, {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback('➕ Add Task', 'add_task'),
+            Markup.button.callback('🔄 Refresh', 'refresh_tasks'),
+          ],
+        ]),
+      });
+    } catch (error) {
+      logger.error('Failed to fetch tasks', { userId, error });
+      await ctx.reply('Sorry, I couldn\'t fetch your tasks. Please try again.');
+    }
+  }
+
+  /**
+   * Handle /schedule command
+   */
+  async handleSchedule(ctx: TelegramContext): Promise<void> {
+    if (!this.requireAuth(ctx)) return;
+
+    const userId = ctx.session.userId!;
+
+    await ctx.reply('📅 *Fetching your schedule...*', { parse_mode: 'Markdown' });
+
+    try {
+      const events = await this.getTodayEvents(userId);
+
+      if (events.length === 0) {
+        await ctx.reply('No meetings scheduled for today! 📅');
+        return;
+      }
+
+      let message = `📅 *Today's Schedule*\n\n`;
+
+      for (const event of events) {
+        message += `*${event.time}* - ${event.title}\n`;
+        if (event.location) message += `📍 ${event.location}\n`;
+        if (event.meetingUrl) message += `🔗 [Join Meeting](${event.meetingUrl})\n`;
+        message += `\n`;
+      }
+
+      await ctx.reply(message, {
+        parse_mode: 'Markdown',
+        link_preview_options: { is_disabled: true },
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback('📅 Tomorrow', 'schedule_tomorrow'),
+            Markup.button.callback('📅 This Week', 'schedule_week'),
+          ],
+        ]),
+      });
+    } catch (error) {
+      logger.error('Failed to fetch schedule', { userId, error });
+      await ctx.reply('Sorry, I couldn\'t fetch your schedule. Please try again.');
+    }
+  }
+
+  /**
+   * Handle /search command
+   */
+  async handleSearch(ctx: TelegramContext): Promise<void> {
+    if (!this.requireAuth(ctx)) return;
+
+    const text = ctx.message && 'text' in ctx.message ? ctx.message.text : '';
+    const query = text.replace('/search', '').trim();
+
+    if (!query) {
+      await ctx.reply('What would you like to search for?\n\nUsage: `/search [query]`', {
+        parse_mode: 'Markdown',
+      });
+      ctx.session.awaitingInput = 'search_query';
+      return;
+    }
+
+    await this.performSearch(ctx, query);
+  }
+
+  /**
+   * Handle /settings command
+   */
+  async handleSettings(ctx: TelegramContext): Promise<void> {
+    if (!this.requireAuth(ctx)) return;
+
+    await ctx.reply(
+      '⚙️ *Settings*\n\n' +
+      'Configure your Edith preferences:',
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🔔 Notifications', 'settings_notifications')],
+          [Markup.button.callback('🌅 Daily Briefing', 'settings_briefing')],
+          [Markup.button.callback('🔗 Connected Services', 'settings_services')],
+          [Markup.button.callback('🔓 Disconnect', 'settings_disconnect')],
+        ]),
+      }
+    );
+  }
+
+  /**
+   * Handle /help command
+   */
+  async handleHelp(ctx: TelegramContext): Promise<void> {
+    await ctx.reply(
+      '🤖 *Edith Commands*\n\n' +
+      '/today - Get your daily briefing\n' +
+      '/inbox - View unread emails\n' +
+      '/tasks - View pending tasks\n' +
+      '/schedule - View today\'s calendar\n' +
+      '/search - Search across all data\n' +
+      '/settings - Manage preferences\n' +
+      '/help - Show this message\n\n' +
+      '_You can also send me natural language messages!_',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  /**
+   * Handle plain text messages
+   */
+  async handleText(ctx: TelegramContext): Promise<void> {
+    if (!ctx.message || !('text' in ctx.message)) return;
+
+    // Check for awaiting input
+    if (ctx.session.awaitingInput === 'search_query') {
+      ctx.session.awaitingInput = undefined;
+      await this.performSearch(ctx, ctx.message.text);
+      return;
+    }
+
+    // Check authentication for general messages
+    if (!this.requireAuth(ctx)) return;
+
+    const text = ctx.message.text;
+    const userId = ctx.session.userId!;
+
+    // Route to orchestrator for natural language processing
+    // For now, acknowledge and store
+    await ctx.reply('🤔 Processing your request...');
+
+    try {
+      // Store interaction for processing
+      await prisma.telegramInteraction.create({
+        data: {
+          userId,
+          telegramId: String(ctx.from!.id),
+          chatId: String(ctx.chat?.id || ctx.from!.id),
+          type: 'MESSAGE',
+          text,
+          status: 'PENDING',
+        },
+      });
+
+      // In full implementation, route to orchestrator agent
+      // const response = await orchestratorAgent.process(context, text);
+
+      await ctx.reply(
+        `I understood: "${text}"\n\n` +
+        `_In the full version, I would process this with my AI agents._`,
+        { parse_mode: 'Markdown' }
+      );
+    } catch (error) {
+      logger.error('Failed to process message', { userId, error });
+      await ctx.reply('Sorry, I couldn\'t process your request. Please try again.');
+    }
+  }
+
+  /**
+   * Handle voice messages
+   */
+  async handleVoice(ctx: TelegramContext): Promise<void> {
+    if (!this.requireAuth(ctx)) return;
+
+    await ctx.reply(
+      '🎤 Voice messages received!\n\n' +
+      '_Voice transcription coming soon..._',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  /**
+   * Handle photo messages
+   */
+  async handlePhoto(ctx: TelegramContext): Promise<void> {
+    if (!this.requireAuth(ctx)) return;
+
+    await ctx.reply(
+      '📷 Photo received!\n\n' +
+      '_Image analysis coming soon..._',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  /**
+   * Handle document messages
+   */
+  async handleDocument(ctx: TelegramContext): Promise<void> {
+    if (!this.requireAuth(ctx)) return;
+
+    await ctx.reply(
+      '📄 Document received!\n\n' +
+      '_Document processing coming soon..._',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  /**
+   * Handle callback queries (inline buttons)
+   */
+  async handleCallback(ctx: TelegramContext): Promise<void> {
+    if (!ctx.callbackQuery || !('data' in ctx.callbackQuery)) return;
+
+    const data = ctx.callbackQuery.data;
+
+    // Acknowledge the callback
+    await ctx.answerCbQuery();
+
+    switch (data) {
+      case 'view_inbox':
+        await this.handleInbox(ctx);
+        break;
+      case 'view_schedule':
+        await this.handleSchedule(ctx);
+        break;
+      case 'view_tasks':
+        await this.handleTasks(ctx);
+        break;
+      case 'refresh_inbox':
+        await this.handleInbox(ctx);
+        break;
+      case 'refresh_tasks':
+        await this.handleTasks(ctx);
+        break;
+      case 'add_task':
+        await ctx.reply('What task would you like to add?');
+        ctx.session.awaitingInput = 'new_task';
+        break;
+      case 'schedule_tomorrow':
+        await ctx.reply('Tomorrow\'s schedule coming soon...');
+        break;
+      case 'schedule_week':
+        await ctx.reply('This week\'s schedule coming soon...');
+        break;
+      case 'settings_notifications':
+        await ctx.reply('Notification settings coming soon...');
+        break;
+      case 'settings_briefing':
+        await ctx.reply('Briefing settings coming soon...');
+        break;
+      case 'settings_services':
+        await ctx.reply('Connected services coming soon...');
+        break;
+      case 'settings_disconnect':
+        await ctx.reply(
+          '⚠️ Are you sure you want to disconnect your Telegram account?',
+          Markup.inlineKeyboard([
+            [
+              Markup.button.callback('Yes, Disconnect', 'confirm_disconnect'),
+              Markup.button.callback('Cancel', 'cancel_disconnect'),
+            ],
+          ])
+        );
+        break;
+      case 'confirm_disconnect':
+        // Disconnect account
+        if (ctx.session.userId) {
+          await prisma.userIntegration.update({
+            where: { userId_provider: { userId: ctx.session.userId, provider: 'TELEGRAM' } },
+            data: { isActive: false },
+          });
+          ctx.session.isAuthenticated = false;
+          ctx.session.userId = undefined;
+        }
+        await ctx.reply('Your account has been disconnected.');
+        break;
+      case 'cancel_disconnect':
+        await ctx.reply('Disconnect cancelled.');
+        break;
+      default:
+        logger.debug('Unknown callback data', { data });
+    }
+  }
+
+  // ============================================================================
+  // Helper Methods
+  // ============================================================================
+
+  private requireAuth(ctx: TelegramContext): boolean {
+    if (!ctx.session.isAuthenticated) {
+      ctx.reply(
+        '🔒 Please connect your Edith account first.\n\n' +
+        'Use /start to get started.',
+        { parse_mode: 'Markdown' }
+      );
+      return false;
+    }
+    return true;
+  }
+
+  private async generateLinkToken(telegramId: number): Promise<string> {
+    // Generate a secure token for account linking
+    const token = Buffer.from(`${telegramId}:${Date.now()}:${Math.random()}`).toString('base64url');
+
+    // Store temporarily
+    await prisma.telegramLinkToken.create({
+      data: {
+        token,
+        telegramId: String(telegramId),
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
+      },
+    });
+
+    return token;
+  }
+
+  private async performSearch(ctx: TelegramContext, query: string): Promise<void> {
+    // userId will be used in full implementation
+    const _userId = ctx.session.userId!;
+
+    await ctx.reply(`🔍 Searching for "${query}"...`);
+
+    // In full implementation, search across emails, calendar, tasks
+    await ctx.reply(
+      `Search results for "${query}":\n\n` +
+      `_Full search functionality coming soon..._`,
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  // Data fetching helpers (placeholders)
+  private async getTodayEvents(_userId: string): Promise<Array<{
+    time: string;
+    title: string;
+    location?: string;
+    meetingUrl?: string;
+  }>> {
+    // In full implementation, fetch from CalendarService
+    return [];
+  }
+
+  private async getTodayTasks(_userId: string): Promise<Array<{
+    title: string;
+    priority: string;
+    dueDate?: string;
+  }>> {
+    // In full implementation, fetch from TaskService
+    return [];
+  }
+
+  private async getAllTasks(_userId: string): Promise<Array<{
+    title: string;
+    priority: string;
+    dueDate?: string;
+  }>> {
+    return [];
+  }
+
+  private async getEmailSummary(_userId: string): Promise<{ unread: number; important: number }> {
+    // In full implementation, fetch from EmailService
+    return { unread: 0, important: 0 };
+  }
+
+  private async getRecentEmails(_userId: string): Promise<Array<{
+    from: string;
+    subject: string;
+    snippet: string;
+    isRead: boolean;
+    isImportant: boolean;
+  }>> {
+    return [];
+  }
+}
+
+export const telegramCommands = new TelegramCommandsImpl();
+export default telegramCommands;

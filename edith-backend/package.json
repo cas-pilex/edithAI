@@ -1,0 +1,80 @@
+{
+  "name": "edith-backend",
+  "version": "1.0.0",
+  "description": "Edith.ai - AI-powered personal operations platform for entrepreneurs",
+  "main": "dist/index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/app.ts",
+    "build": "tsc",
+    "start": "node dist/app.js",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx src/database/seed.ts",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ai",
+    "automation",
+    "personal-assistant",
+    "entrepreneur",
+    "productivity"
+  ],
+  "author": "Edith.ai",
+  "license": "PROPRIETARY",
+  "packageManager": "pnpm@10.28.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "esbuild",
+      "bcrypt"
+    ]
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "@prisma/client": "^6.19.2",
+    "@slack/events-api": "^3.0.1",
+    "@slack/web-api": "^7.13.0",
+    "amadeus": "^11.0.0",
+    "bcrypt": "^5.1.1",
+    "bullmq": "^5.67.3",
+    "compression": "^1.8.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.4",
+    "express": "^5.2.1",
+    "express-rate-limit": "^7.5.0",
+    "googleapis": "^171.4.0",
+    "helmet": "^8.1.0",
+    "ioredis": "^5.9.2",
+    "jsonwebtoken": "^9.0.2",
+    "socket.io": "^4.8.1",
+    "telegraf": "^4.16.3",
+    "twilio": "^5.12.1",
+    "uuid": "^11.1.0",
+    "winston": "^3.17.0",
+    "zod": "^3.25.28"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^5.0.2",
+    "@types/compression": "^1.7.5",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/node": "^22.15.2",
+    "@types/uuid": "^10.0.0",
+    "prisma": "^6.19.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.1.3"
+  }
+}

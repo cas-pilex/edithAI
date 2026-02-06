@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx pnpm add:*)",
+      "Bash(npx pnpm approve-builds)",
+      "Bash(npx pnpm install)",
+      "Bash(npx pnpm:*)",
+      "Bash(npx tsc:*)",
+      "Bash(pnpm add:*)",
+      "Bash(npm install:*)",
+      "Bash(npx prisma generate:*)",
+      "Bash(pnpm build:*)",
+      "Bash(npm run build:*)"
+    ]
+  }
+}

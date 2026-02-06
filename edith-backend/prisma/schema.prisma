@@ -1,0 +1,1209 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== ENUMS ====================
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum SubscriptionTier {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  TRIALING
+}
+
+enum PreferredChannel {
+  EMAIL
+  TELEGRAM
+  WHATSAPP
+  SLACK
+}
+
+enum DigestFrequency {
+  REALTIME
+  HOURLY
+  DAILY
+}
+
+enum CommunicationTone {
+  FORMAL
+  CASUAL
+  MIXED
+}
+
+enum ResponseLength {
+  CONCISE
+  DETAILED
+}
+
+enum IntegrationProvider {
+  GMAIL
+  GOOGLE_CALENDAR
+  SLACK
+  TELEGRAM
+  WHATSAPP
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCING
+  COMPLETED
+  FAILED
+}
+
+enum EmailCategory {
+  URGENT
+  ACTION_REQUIRED
+  FOLLOW_UP
+  FYI
+  NEWSLETTER
+  SPAM
+}
+
+enum EmailProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum DraftStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+}
+
+enum EventStatus {
+  CONFIRMED
+  TENTATIVE
+  CANCELLED
+}
+
+enum ContactSource {
+  MANUAL
+  EMAIL
+  CALENDAR
+  LINKEDIN
+}
+
+enum RelationshipType {
+  LEAD
+  CLIENT
+  PARTNER
+  INVESTOR
+  MENTOR
+  FRIEND
+  FAMILY
+  OTHER
+}
+
+enum InteractionType {
+  EMAIL_SENT
+  EMAIL_RECEIVED
+  MEETING
+  CALL
+  MESSAGE
+  NOTE
+}
+
+enum TripStatus {
+  PLANNING
+  BOOKED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum BookingType {
+  FLIGHT
+  HOTEL
+  RESTAURANT
+  CAR
+  TRAIN
+  OTHER
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum ExpenseCategory {
+  TRAVEL
+  MEALS
+  ACCOMMODATION
+  TRANSPORT
+  SOFTWARE
+  OTHER
+}
+
+enum ExpenseStatus {
+  PENDING
+  CATEGORIZED
+  APPROVED
+  REIMBURSED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  DONE
+}
+
+enum TaskSource {
+  MANUAL
+  EMAIL
+  MEETING
+  AI
+}
+
+enum PatternType {
+  COMMUNICATION_STYLE
+  SCHEDULING
+  RESPONSE_TIME
+  PRIORITY
+  OTHER
+}
+
+enum ActionStatus {
+  SUCCESS
+  FAILURE
+  PENDING_APPROVAL
+  REJECTED
+}
+
+enum FeedbackType {
+  POSITIVE
+  NEGATIVE
+  NEUTRAL
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  TELEGRAM
+  WHATSAPP
+  SLACK
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum SecurityEventType {
+  LOGIN
+  LOGOUT
+  FAILED_LOGIN
+  PASSWORD_CHANGE
+  TOKEN_REFRESH
+  SUSPICIOUS_ACTIVITY
+}
+
+enum DataRequestStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ==================== USER & AUTH ====================
+
+model User {
+  id                 String             @id @default(uuid())
+  email              String             @unique
+  passwordHash       String
+  name               String?
+  timezone           String             @default("UTC")
+  locale             String             @default("en")
+  subscriptionTier   SubscriptionTier   @default(FREE)
+  subscriptionStatus SubscriptionStatus @default(ACTIVE)
+  stripeCustomerId   String?
+  isActive           Boolean            @default(true)
+  role               UserRole           @default(USER)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  lastLoginAt        DateTime?
+
+  // Relations
+  preferences           UserPreferences?
+  sessions              Session[]
+  integrations          UserIntegration[]
+  emails                Email[]
+  emailDrafts           EmailDraft[]
+  emailRules            EmailRule[]
+  calendarEvents        CalendarEvent[]
+  schedulingPreference  SchedulingPreference?
+  calendarSyncs         CalendarSync[]
+  contacts              Contact[]
+  interactions          Interaction[]
+  trips                 Trip[]
+  travelSearches        TravelSearch[]
+  expenses              Expense[]
+  expenseReports        ExpenseReport[]
+  tasks                 Task[]
+  recurringTasks        RecurringTask[]
+  patterns              UserPattern[]
+  actionLogs            ActionLog[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+  securityEvents        SecurityEvent[]
+  dataExportRequests    DataExportRequest[]
+  dataDeletionRequests  DataDeletionRequest[]
+  successMetrics        SuccessMetrics[]
+  weeklyReports         WeeklyReport[]
+
+  @@index([email])
+  @@index([createdAt])
+  @@index([subscriptionTier])
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  token        String   @unique
+  refreshToken String   @unique
+  expiresAt    DateTime
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([refreshToken])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model UserPreferences {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  // Communication
+  preferredChannel PreferredChannel @default(EMAIL)
+  quietHoursStart  String?          // HH:mm format
+  quietHoursEnd    String?          // HH:mm format
+  digestFrequency  DigestFrequency  @default(REALTIME)
+  language         String           @default("en")
+
+  // Work
+  workingHoursStart    String   @default("09:00")
+  workingHoursEnd      String   @default("17:00")
+  workingDays          Int[]    @default([1, 2, 3, 4, 5]) // 0=Sun, 1=Mon, etc.
+  focusBlockDuration   Int      @default(90) // minutes
+  meetingBufferMinutes Int      @default(15)
+  maxMeetingsPerDay    Int      @default(8)
+
+  // Style
+  communicationTone CommunicationTone @default(MIXED)
+  emailSignature    String?
+  responseLength    ResponseLength    @default(CONCISE)
+
+  // Travel
+  preferredAirlines   String[] @default([])
+  seatPreference      String?  // window, aisle, middle
+  hotelStars          Int      @default(4)
+  dietaryRestrictions String?
+  loyaltyPrograms     Json     @default("{}")
+
+  // Privacy
+  dataRetentionDays Int     @default(365)
+  allowAnalytics    Boolean @default(true)
+  marketingEmails   Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+// ==================== INTEGRATIONS ====================
+
+model UserIntegration {
+  id                    String              @id @default(uuid())
+  userId                String
+  provider              IntegrationProvider
+  accessTokenEncrypted  String?
+  refreshTokenEncrypted String?
+  tokenExpiresAt        DateTime?
+  scope                 String?
+  externalUserId        String?
+  metadata              Json                @default("{}")
+  isActive              Boolean             @default(true)
+  connectedAt           DateTime            @default(now())
+  lastSyncAt            DateTime?
+  syncStatus            SyncStatus          @default(PENDING)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([userId])
+  @@index([provider])
+  @@index([syncStatus])
+  @@map("user_integrations")
+}
+
+// ==================== INBOX ====================
+
+model Email {
+  id               String                 @id @default(uuid())
+  userId           String
+  externalId       String
+  threadId         String?
+  fromAddress      String
+  fromName         String?
+  toAddresses      String[]
+  ccAddresses      String[]               @default([])
+  subject          String
+  bodyText         String?
+  bodyHtml         String?
+  snippet          String?
+  receivedAt       DateTime
+  isRead           Boolean                @default(false)
+  isStarred        Boolean                @default(false)
+  isArchived       Boolean                @default(false)
+  isDeleted        Boolean                @default(false)
+  labels           String[]               @default([])
+  attachments      Json                   @default("[]")
+
+  // AI Fields
+  priorityScore    Int?                   // 0-100
+  category         EmailCategory?
+  aiSummary        String?
+  suggestedAction  String?
+  sentiment        String?
+  extractedTasks   Json                   @default("[]")
+  extractedDates   Json                   @default("[]")
+  processingStatus EmailProcessingStatus  @default(PENDING)
+  processedAt      DateTime?
+
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  drafts       EmailDraft[]
+  interactions Interaction[]
+
+  @@unique([userId, externalId])
+  @@index([userId])
+  @@index([receivedAt])
+  @@index([category])
+  @@index([priorityScore])
+  @@index([processingStatus])
+  @@index([threadId])
+  @@map("emails")
+}
+
+model EmailDraft {
+  id          String      @id @default(uuid())
+  emailId     String?     // For replies
+  userId      String
+  toAddresses String[]
+  ccAddresses String[]    @default([])
+  subject     String
+  body        String
+  tone        String?
+  status      DraftStatus @default(DRAFT)
+  createdAt   DateTime    @default(now())
+  approvedAt  DateTime?
+  sentAt      DateTime?
+
+  email Email? @relation(fields: [emailId], references: [id], onDelete: SetNull)
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@map("email_drafts")
+}
+
+model EmailRule {
+  id         String  @id @default(uuid())
+  userId     String
+  name       String
+  conditions Json    // { field: 'from', operator: 'contains', value: 'newsletter' }
+  actions    Json    // { type: 'archive', category: 'NEWSLETTER' }
+  isActive   Boolean @default(true)
+  priority   Int     @default(0)
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isActive])
+  @@map("email_rules")
+}
+
+// ==================== CALENDAR ====================
+
+model CalendarEvent {
+  id               String      @id @default(uuid())
+  userId           String
+  externalId       String
+  calendarId       String?
+  title            String
+  description      String?
+  startTime        DateTime
+  endTime          DateTime
+  timezone         String      @default("UTC")
+  location         String?
+  isAllDay         Boolean     @default(false)
+  isOnline         Boolean     @default(false)
+  meetingUrl       String?
+  attendees        Json        @default("[]")
+  organizer        String?
+  status           EventStatus @default(CONFIRMED)
+  recurrenceRule   String?
+  originalEventId  String?
+
+  // AI Fields
+  travelTimeMinutes   Int?
+  suggestedPrepTime   Int?
+  conflictsWith       String[]  @default([])
+  optimizationNotes   String?
+
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  meetingPrep MeetingPrep?
+  interactions Interaction[]
+
+  @@unique([userId, externalId])
+  @@index([userId])
+  @@index([startTime])
+  @@index([endTime])
+  @@index([status])
+  @@map("calendar_events")
+}
+
+model MeetingPrep {
+  id                    String   @id @default(uuid())
+  eventId               String   @unique
+  researchNotes         String?
+  attendeeProfiles      Json     @default("[]")
+  suggestedTalkingPoints String[] @default([])
+  relevantEmails        String[] @default([])
+  relevantDocuments     String[] @default([])
+  userNotes             String?
+  generatedAt           DateTime @default(now())
+
+  event CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("meeting_preps")
+}
+
+model SchedulingPreference {
+  id                      String @id @default(uuid())
+  userId                  String @unique
+  bufferBeforeMeetings    Int    @default(5) // minutes
+  bufferAfterMeetings     Int    @default(5) // minutes
+  focusTimeBlocks         Json   @default("[]") // [{ day: 1, start: '09:00', end: '12:00' }]
+  noMeetingDays           Int[]  @default([]) // 0=Sun, 6=Sat
+  preferredMeetingTimes   Json   @default("{}") // { morning: true, afternoon: true, evening: false }
+  maxConsecutiveMeetings  Int    @default(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("scheduling_preferences")
+}
+
+model CalendarSync {
+  id           String    @id @default(uuid())
+  userId       String
+  calendarId   String
+  calendarName String
+  isPrimary    Boolean   @default(false)
+  syncToken    String?
+  lastSyncAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, calendarId])
+  @@index([userId])
+  @@map("calendar_syncs")
+}
+
+// ==================== CRM ====================
+
+model Contact {
+  id               String           @id @default(uuid())
+  userId           String
+  externalId       String?
+  email            String?
+  phone            String?
+  firstName        String?
+  lastName         String?
+  company          String?
+  jobTitle         String?
+  linkedinUrl      String?
+  photoUrl         String?
+  source           ContactSource    @default(MANUAL)
+
+  // Relationship
+  relationshipType RelationshipType @default(OTHER)
+  importanceScore  Int              @default(5) // 1-10
+  lastContactDate  DateTime?
+  nextFollowUpDate DateTime?
+  followUpReason   String?
+
+  // AI Fields
+  communicationFrequency String?
+  averageResponseTime    Int?       // minutes
+  sentiment              String?
+  interests              String[]   @default([])
+  notes                  String?
+
+  // Dates
+  birthday         DateTime?
+  anniversary      DateTime?
+  customDates      Json      @default("{}")
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interactions Interaction[]
+  reminders    ContactReminder[]
+
+  @@unique([userId, email])
+  @@index([userId])
+  @@index([relationshipType])
+  @@index([importanceScore])
+  @@index([lastContactDate])
+  @@index([nextFollowUpDate])
+  @@map("contacts")
+}
+
+model Interaction {
+  id            String          @id @default(uuid())
+  contactId     String
+  userId        String
+  type          InteractionType
+  date          DateTime
+  summary       String?
+  sentiment     String?
+  linkedEmailId String?
+  linkedEventId String?
+  metadata      Json            @default("{}")
+  createdAt     DateTime        @default(now())
+
+  contact Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email   Email?         @relation(fields: [linkedEmailId], references: [id], onDelete: SetNull)
+  event   CalendarEvent? @relation(fields: [linkedEventId], references: [id], onDelete: SetNull)
+
+  @@index([contactId])
+  @@index([userId])
+  @@index([date])
+  @@index([type])
+  @@map("interactions")
+}
+
+model ContactReminder {
+  id          String    @id @default(uuid())
+  contactId   String
+  type        String    // FOLLOW_UP, BIRTHDAY, ANNIVERSARY, CUSTOM
+  dueDate     DateTime
+  message     String?
+  isCompleted Boolean   @default(false)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId])
+  @@index([dueDate])
+  @@index([isCompleted])
+  @@map("contact_reminders")
+}
+
+// ==================== TRAVEL ====================
+
+model Trip {
+  id          String     @id @default(uuid())
+  userId      String
+  name        String
+  destination String
+  startDate   DateTime
+  endDate     DateTime
+  purpose     String?
+  status      TripStatus @default(PLANNING)
+  totalBudget Float?
+  totalSpent  Float      @default(0)
+  currency    String     @default("USD")
+  notes       String?
+  itinerary   Json       @default("[]")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+  searches TravelSearch[]
+  expenses Expense[]
+
+  @@index([userId])
+  @@index([startDate])
+  @@index([status])
+  @@map("trips")
+}
+
+model Booking {
+  id                  String        @id @default(uuid())
+  tripId              String
+  type                BookingType
+  provider            String?
+  confirmationNumber  String?
+  status              BookingStatus @default(PENDING)
+  details             Json          @default("{}")
+  price               Float?
+  currency            String        @default("USD")
+  bookedAt            DateTime?
+  startDateTime       DateTime
+  endDateTime         DateTime
+  cancellationPolicy  String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([tripId])
+  @@index([type])
+  @@index([status])
+  @@map("bookings")
+}
+
+model TravelSearch {
+  id               String   @id @default(uuid())
+  userId           String
+  tripId           String?
+  searchType       String   // flight, hotel, car, etc.
+  searchParams     Json
+  results          Json     @default("[]")
+  selectedResultId String?
+  searchedAt       DateTime @default(now())
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trip Trip? @relation(fields: [tripId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([tripId])
+  @@index([searchedAt])
+  @@map("travel_searches")
+}
+
+// ==================== EXPENSES ====================
+
+model Expense {
+  id           String          @id @default(uuid())
+  userId       String
+  tripId       String?
+  amount       Float
+  currency     String          @default("USD")
+  category     ExpenseCategory
+  description  String?
+  vendor       String?
+  date         DateTime
+  receiptUrl   String?
+  receiptData  Json            @default("{}")
+  status       ExpenseStatus   @default(PENDING)
+  aiCategory   ExpenseCategory?
+  aiConfidence Float?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trip Trip? @relation(fields: [tripId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([tripId])
+  @@index([date])
+  @@index([category])
+  @@index([status])
+  @@map("expenses")
+}
+
+model ExpenseReport {
+  id          String   @id @default(uuid())
+  userId      String
+  periodStart DateTime
+  periodEnd   DateTime
+  totalAmount Float
+  byCategory  Json     @default("{}")
+  generatedAt DateTime @default(now())
+  pdfUrl      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([periodStart])
+  @@map("expense_reports")
+}
+
+// ==================== TASKS ====================
+
+model Task {
+  id               String       @id @default(uuid())
+  userId           String
+  title            String
+  description      String?
+  priority         TaskPriority @default(MEDIUM)
+  status           TaskStatus   @default(TODO)
+  dueDate          DateTime?
+  estimatedMinutes Int?
+  actualMinutes    Int?
+  source           TaskSource   @default(MANUAL)
+  sourceId         String?
+  tags             String[]     @default([])
+  createdAt        DateTime     @default(now())
+  completedAt      DateTime?
+  updatedAt        DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([priority])
+  @@index([dueDate])
+  @@map("tasks")
+}
+
+model RecurringTask {
+  id             String    @id @default(uuid())
+  userId         String
+  taskTemplate   Json      // { title, description, priority, estimatedMinutes, tags }
+  recurrenceRule String    // RRULE format
+  nextOccurrence DateTime?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isActive])
+  @@index([nextOccurrence])
+  @@map("recurring_tasks")
+}
+
+// ==================== LEARNING & MEMORY ====================
+
+model UserPattern {
+  id           String      @id @default(uuid())
+  userId       String
+  patternType  PatternType
+  patternData  Json
+  confidence   Float       @default(0.5)
+  learnedFrom  String?
+  occurrences  Int         @default(1)
+  firstObserved DateTime   @default(now())
+  lastObserved  DateTime   @default(now())
+  isActive     Boolean     @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([patternType])
+  @@index([isActive])
+  @@map("user_patterns")
+}
+
+model ActionLog {
+  id              String       @id @default(uuid())
+  userId          String
+  agentType       String
+  action          String
+  input           Json         @default("{}")
+  output          Json         @default("{}")
+  confidence      Float?
+  status          ActionStatus @default(SUCCESS)
+  userFeedback    FeedbackType?
+  feedbackComment String?
+  executedAt      DateTime     @default(now())
+  duration        Int?         // milliseconds
+
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feedback Feedback[]
+
+  @@index([userId])
+  @@index([agentType])
+  @@index([status])
+  @@index([executedAt])
+  @@map("action_logs")
+}
+
+model Feedback {
+  id          String   @id @default(uuid())
+  actionLogId String
+  rating      Int      // 1-5
+  comment     String?
+  createdAt   DateTime @default(now())
+
+  actionLog ActionLog @relation(fields: [actionLogId], references: [id], onDelete: Cascade)
+
+  @@map("feedbacks")
+}
+
+// ==================== NOTIFICATIONS ====================
+
+model Notification {
+  id           String               @id @default(uuid())
+  userId       String
+  type         String
+  title        String
+  body         String?
+  data         Json                 @default("{}")
+  channel      NotificationChannel  @default(IN_APP)
+  priority     NotificationPriority @default(NORMAL)
+  status       NotificationStatus   @default(PENDING)
+  scheduledFor DateTime?
+  sentAt       DateTime?
+  readAt       DateTime?
+  errorMessage String?
+  createdAt    DateTime             @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([channel])
+  @@index([scheduledFor])
+  @@map("notifications")
+}
+
+// ==================== SECURITY & AUDIT ====================
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  action     String
+  resource   String
+  resourceId String?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json     @default("{}")
+  timestamp  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+model SecurityEvent {
+  id        String            @id @default(uuid())
+  userId    String?
+  eventType SecurityEventType
+  ipAddress String?
+  userAgent String?
+  metadata  Json              @default("{}")
+  timestamp DateTime          @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([timestamp])
+  @@map("security_events")
+}
+
+model DataExportRequest {
+  id          String            @id @default(uuid())
+  userId      String
+  status      DataRequestStatus @default(PENDING)
+  requestedAt DateTime          @default(now())
+  completedAt DateTime?
+  downloadUrl String?
+  expiresAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@map("data_export_requests")
+}
+
+model DataDeletionRequest {
+  id           String            @id @default(uuid())
+  userId       String
+  status       DataRequestStatus @default(PENDING)
+  requestedAt  DateTime          @default(now())
+  scheduledFor DateTime?
+  completedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@map("data_deletion_requests")
+}
+
+// ==================== SLACK INTEGRATION ====================
+
+model SlackChannel {
+  id          String   @id @default(uuid())
+  externalId  String
+  userId      String
+  channelId   String
+  name        String
+  isPrivate   Boolean  @default(false)
+  isArchived  Boolean  @default(false)
+  isMember    Boolean  @default(true)
+  memberCount Int      @default(0)
+  topic       String?
+  purpose     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([externalId, userId])
+  @@unique([userId, channelId])
+  @@index([userId])
+  @@map("slack_channels")
+}
+
+model SlackMember {
+  id          String   @id @default(uuid())
+  externalId  String
+  userId      String
+  memberId    String
+  name        String
+  realName    String?
+  displayName String?
+  email       String?
+  isBot       Boolean  @default(false)
+  isAdmin     Boolean  @default(false)
+  avatarUrl   String?
+  timezone    String?
+  statusText  String?
+  statusEmoji String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([externalId, userId])
+  @@unique([userId, memberId])
+  @@index([userId])
+  @@map("slack_members")
+}
+
+model SlackMessage {
+  id          String   @id @default(uuid())
+  externalId  String
+  userId      String
+  channelId   String
+  messageTs   String
+  threadTs    String?
+  senderId    String?
+  text        String?
+  blocks      Json     @default("[]")
+  attachments Json     @default("[]")
+  reactions   Json     @default("[]")
+  isEdited    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([externalId, userId])
+  @@unique([userId, channelId, messageTs])
+  @@index([userId])
+  @@index([channelId])
+  @@map("slack_messages")
+}
+
+model SlackInteraction {
+  id          String   @id @default(uuid())
+  userId      String
+  slackUserId String?
+  type        String   // slash_command, block_action, etc.
+  command     String?
+  text        String?
+  action      String?  // The action that triggered this interaction
+  triggerId   String?
+  channelId   String?
+  messageTs   String?
+  threadTs    String?
+  timestamp   String?
+  responseUrl String?
+  status      String?  // processing, completed, failed
+  payload     Json     @default("{}")
+  response    Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([type])
+  @@map("slack_interactions")
+}
+
+// ==================== TELEGRAM INTEGRATION ====================
+
+model TelegramInteraction {
+  id          String   @id @default(uuid())
+  userId      String
+  telegramId  String?
+  chatId      String
+  messageId   String?
+  type        String   // command, message, callback_query
+  command     String?
+  text        String?
+  status      String?  // PENDING, PROCESSING, COMPLETED, FAILED
+  payload     Json     @default("{}")
+  response    Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([chatId])
+  @@map("telegram_interactions")
+}
+
+model TelegramLinkToken {
+  id         String   @id @default(uuid())
+  token      String   @unique
+  userId     String?
+  telegramId String?
+  chatId     String?
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([token])
+  @@index([expiresAt])
+  @@map("telegram_link_tokens")
+}
+
+// ==================== WHATSAPP INTEGRATION ====================
+
+model WhatsAppSession {
+  id           String    @id @default(uuid())
+  userId       String
+  phoneNumber  String
+  lastActiveAt DateTime  @default(now())
+  lastInboundAt DateTime?
+  sessionData  Json      @default("{}")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([userId, phoneNumber])
+  @@index([userId])
+  @@map("whatsapp_sessions")
+}
+
+model WhatsAppMessage {
+  id           String   @id @default(uuid())
+  userId       String
+  messageSid   String   @unique
+  phoneNumber  String?
+  direction    String   // inbound, outbound
+  fromNumber   String
+  toNumber     String
+  body         String?
+  mediaUrl     String?
+  status       String   @default("sent")
+  sentAt       DateTime?
+  errorCode    String?
+  errorMessage String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([messageSid])
+  @@map("whatsapp_messages")
+}
+
+// ==================== VERIFICATION ====================
+
+model VerificationCode {
+  id          String    @id @default(uuid())
+  userId      String
+  type        String    // WHATSAPP, TELEGRAM, EMAIL
+  code        String
+  phoneNumber String?
+  email       String?
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([code])
+  @@index([expiresAt])
+  @@map("verification_codes")
+}
+
+// ==================== SUCCESS METRICS ====================
+
+model SuccessMetrics {
+  id               String   @id @default(uuid())
+  userId           String
+  date             DateTime @db.Date
+  emailsProcessed  Int      @default(0)
+  emailsDrafted    Int      @default(0)
+  meetingsScheduled Int     @default(0)
+  tasksCompleted   Int      @default(0)
+  timeSavedMinutes Int      @default(0)
+  travelBooked     Int      @default(0)
+  contactsNurtured Int      @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([date])
+  @@map("success_metrics")
+}
+
+model WeeklyReport {
+  id          String    @id @default(uuid())
+  userId      String
+  weekStart   DateTime  @db.Date
+  weekEnd     DateTime  @db.Date
+  metrics     Json      @default("{}")
+  highlights  String[]  @default([])
+  suggestions String[]  @default([])
+  generatedAt DateTime  @default(now())
+  viewedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
+  @@index([userId])
+  @@index([weekStart])
+  @@map("weekly_reports")
+}
