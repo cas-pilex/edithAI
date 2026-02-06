@@ -9,6 +9,8 @@ import { config } from './config/index.js';
 import { connectDatabase, disconnectDatabase } from './database/client.js';
 import { getRedisClient, disconnectRedis } from './database/redis.js';
 import { closeQueues, scheduleMaintenanceJobs } from './jobs/queue.js';
+import { initializeWorkers, stopWorkers } from './jobs/workers/index.js';
+import { jobSchedulerService } from './services/JobSchedulerService.js';
 import routes from './api/routes/index.js';
 import { requestLogger } from './api/middleware/audit.middleware.js';
 import { standardRateLimit } from './api/middleware/rateLimit.middleware.js';
@@ -118,6 +120,9 @@ async function shutdown(signal: string): Promise<void> {
   });
 
   try {
+    // Stop workers first
+    await stopWorkers();
+
     // Close all connections
     await Promise.all([
       disconnectDatabase(),
@@ -146,7 +151,13 @@ async function main(): Promise<void> {
     // Initialize Redis
     getRedisClient();
 
-    // Schedule maintenance jobs
+    // Initialize job workers
+    await initializeWorkers();
+
+    // Schedule system-wide maintenance jobs
+    await jobSchedulerService.initializeSystemJobs();
+
+    // Schedule additional maintenance jobs (legacy)
     if (config.isProduction) {
       await scheduleMaintenanceJobs();
     }

@@ -18,3 +18,8 @@ export { taskService } from './TaskService.js';
 export { expenseService } from './ExpenseService.js';
 export { meetingPrepService } from './MeetingPrepService.js';
 export { reportService } from './ReportService.js';
+
+// Job & Notification Services
+export { jobSchedulerService } from './JobSchedulerService.js';
+export { notificationService } from './NotificationService.js';
+export { reportingService } from './ReportingService.js';

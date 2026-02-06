@@ -243,6 +243,29 @@ enum DataRequestStatus {
   FAILED
 }
 
+// ==================== JOB SCHEDULING ====================
+
+enum JobStatus {
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum JobType {
+  MORNING_BRIEFING
+  INBOX_PROCESSOR
+  CALENDAR_OPTIMIZER
+  MEETING_PREP
+  WEEKLY_REPORT
+  RELATIONSHIP_NURTURE
+  EMAIL_DIGEST
+  FOLLOW_UP_REMINDER
+  SECURITY_AUDIT
+  METRIC_AGGREGATION
+}
+
 // ==================== USER & AUTH ====================
 
 model User {
@@ -288,6 +311,7 @@ model User {
   dataDeletionRequests  DataDeletionRequest[]
   successMetrics        SuccessMetrics[]
   weeklyReports         WeeklyReport[]
+  scheduledJobs         ScheduledJob[]
 
   @@index([email])
   @@index([createdAt])
@@ -900,12 +924,22 @@ model Notification {
   errorMessage String?
   createdAt    DateTime             @default(now())
 
+  // Delivery tracking
+  deliveryAttempts  Int       @default(0)
+  lastDeliveryAt    DateTime?
+  deliveredAt       DateTime?
+  deliveryError     String?
+  externalMessageId String?   // Telegram/WhatsApp/Slack message ID
+  expiresAt         DateTime?
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([status])
   @@index([channel])
   @@index([scheduledFor])
+  @@index([deliveredAt])
+  @@index([expiresAt])
   @@map("notifications")
 }
 
@@ -1206,4 +1240,38 @@ model WeeklyReport {
   @@index([userId])
   @@index([weekStart])
   @@map("weekly_reports")
+}
+
+// ==================== SCHEDULED JOBS ====================
+
+model ScheduledJob {
+  id              String      @id @default(uuid())
+  userId          String?
+  jobType         JobType
+  status          JobStatus   @default(SCHEDULED)
+  cronExpression  String?
+  scheduledFor    DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  failedAt        DateTime?
+  errorMessage    String?
+  retryCount      Int         @default(0)
+  maxRetries      Int         @default(3)
+  payload         Json        @default("{}")
+  result          Json?
+  bullJobId       String?     @unique
+  isRecurring     Boolean     @default(false)
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([jobType])
+  @@index([status])
+  @@index([scheduledFor])
+  @@index([nextRunAt])
+  @@map("scheduled_jobs")
 }
