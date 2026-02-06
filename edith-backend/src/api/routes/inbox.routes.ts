@@ -1,0 +1,437 @@
+/**
+ * Inbox API Routes
+ * Email management and categorization
+ */
+
+import { Router } from 'express';
+import type { Router as RouterType, Response } from 'express';
+import { authenticate } from '../middleware/auth.middleware.js';
+import { validateBody, validateUUID } from '../middleware/validation.middleware.js';
+import { inboxService } from '../../services/InboxService.js';
+import { sendSuccess, sendPaginated, sendError } from '../../utils/helpers.js';
+import { NotFoundError } from '../../utils/errors.js';
+import {
+  updateEmailCategorySchema,
+  starEmailSchema,
+  bulkEmailsSchema,
+  draftReplySchema,
+} from '../../utils/validation.js';
+import type { AuthenticatedRequest } from '../../types/index.js';
+import { logger } from '../../utils/logger.js';
+
+const router: RouterType = Router();
+
+// Apply authentication to all routes
+router.use(authenticate);
+
+/**
+ * GET /inbox
+ * List emails with filters and pagination
+ */
+router.get(
+  '/',
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.userId!;
+      const { page, limit, category, isRead, isArchived, fromAddress, search, startDate, endDate } = req.query;
+
+      const pageNum = Number(page) || 1;
+      const limitNum = Math.min(Number(limit) || 20, 100);
+      const offset = (pageNum - 1) * limitNum;
+
+      // Parse filters
+      const parsedFilters = {
+        category: category as string | undefined,
+        isRead: isRead === 'true' ? true : isRead === 'false' ? false : undefined,
+        isArchived: isArchived === 'true' ? true : isArchived === 'false' ? false : undefined,
+        fromAddress: fromAddress as string | undefined,
+        search: search as string | undefined,
+        startDate: startDate ? new Date(String(startDate)) : undefined,
+        endDate: endDate ? new Date(String(endDate)) : undefined,
+      };
+
+      const { emails, total } = await inboxService.getEmails(
+        userId,
+        parsedFilters,
+        { limit: limitNum, offset }
+      );
+
+      sendPaginated(res, emails, pageNum, limitNum, total);
+    } catch (error) {
+      logger.error('Failed to get emails', { error });
+      sendError(res, 'Failed to retrieve emails', 500);
+    }
+  }
+);
+
+/**
+ * GET /inbox/stats
+ * Get inbox statistics
+ */
+router.get('/stats', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const stats = await inboxService.getStats(userId);
+    sendSuccess(res, stats);
+  } catch (error) {
+    logger.error('Failed to get inbox stats', { error });
+    sendError(res, 'Failed to retrieve inbox statistics', 500);
+  }
+});
+
+/**
+ * GET /inbox/threads
+ * Get email threads
+ */
+router.get('/threads', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const limit = Math.min(Number(req.query.limit) || 50, 100);
+
+    const threads = await inboxService.getThreads(userId, limit);
+    sendSuccess(res, threads);
+  } catch (error) {
+    logger.error('Failed to get email threads', { error });
+    sendError(res, 'Failed to retrieve email threads', 500);
+  }
+});
+
+/**
+ * GET /inbox/rules
+ * Get email rules
+ */
+router.get('/rules', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const rules = await inboxService.getRules(userId);
+    sendSuccess(res, rules);
+  } catch (error) {
+    logger.error('Failed to get email rules', { error });
+    sendError(res, 'Failed to retrieve email rules', 500);
+  }
+});
+
+/**
+ * POST /inbox/rules
+ * Create email rule
+ */
+router.post('/rules', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const { name, conditions, actions, isActive } = req.body;
+
+    const rule = await inboxService.createRule(userId, {
+      name,
+      conditions,
+      actions,
+      isActive,
+    });
+
+    sendSuccess(res, rule, 'Email rule created', 201);
+  } catch (error) {
+    logger.error('Failed to create email rule', { error });
+    sendError(res, 'Failed to create email rule', 500);
+  }
+});
+
+/**
+ * DELETE /inbox/rules/:id
+ * Delete email rule
+ */
+router.delete(
+  '/rules/:id',
+  validateUUID('id'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.userId!;
+      const id = req.params.id as string;
+
+      await inboxService.deleteRule(id, userId);
+      sendSuccess(res, { deleted: true }, 'Email rule deleted');
+    } catch (error) {
+      logger.error('Failed to delete email rule', { error, ruleId: req.params.id });
+      sendError(res, 'Failed to delete email rule', 500);
+    }
+  }
+);
+
+/**
+ * GET /inbox/thread/:threadId
+ * Get emails in a thread
+ */
+router.get('/thread/:threadId', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const threadId = req.params.threadId as string;
+
+    const emails = await inboxService.getThreadEmails(threadId, userId);
+    sendSuccess(res, emails);
+  } catch (error) {
+    logger.error('Failed to get thread emails', { error, threadId: req.params.threadId as string });
+    sendError(res, 'Failed to retrieve thread emails', 500);
+  }
+});
+
+/**
+ * GET /inbox/:id
+ * Get a single email by ID
+ */
+router.get(
+  '/:id',
+  validateUUID('id'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.userId!;
+      const id = req.params.id as string;
+
+      const email = await inboxService.getEmailById(id, userId);
+
+      if (!email) {
+        throw new NotFoundError('Email');
+      }
+
+      // Mark as read when viewed
+      await inboxService.updateEmail(id, userId, { isRead: true });
+
+      sendSuccess(res, email);
+    } catch (error) {
+      if (error instanceof NotFoundError) {
+        sendError(res, error.message, error.statusCode);
+        return;
+      }
+      logger.error('Failed to get email', { error, emailId: req.params.id });
+      sendError(res, 'Failed to retrieve email', 500);
+    }
+  }
+);
+
+/**
+ * PATCH /inbox/:id/category
+ * Update email category
+ */
+router.patch(
+  '/:id/category',
+  validateUUID('id'),
+  validateBody(updateEmailCategorySchema),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.userId!;
+      const id = req.params.id as string;
+      const { category } = req.body;
+
+      // Check if email exists
+      const existing = await inboxService.getEmailById(id, userId);
+      if (!existing) {
+        throw new NotFoundError('Email');
+      }
+
+      await inboxService.updateEmail(id, userId, { category });
+
+      const updated = await inboxService.getEmailById(id, userId);
+      sendSuccess(res, updated, 'Email category updated');
+    } catch (error) {
+      if (error instanceof NotFoundError) {
+        sendError(res, error.message, error.statusCode);
+        return;
+      }
+      logger.error('Failed to update email category', { error, emailId: req.params.id });
+      sendError(res, 'Failed to update email category', 500);
+    }
+  }
+);
+
+/**
+ * POST /inbox/:id/archive
+ * Archive an email
+ */
+router.post(
+  '/:id/archive',
+  validateUUID('id'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.userId!;
+      const id = req.params.id as string;
+
+      // Check if email exists
+      const existing = await inboxService.getEmailById(id, userId);
+      if (!existing) {
+        throw new NotFoundError('Email');
+      }
+
+      await inboxService.archiveEmails([id], userId);
+      sendSuccess(res, { archived: true }, 'Email archived');
+    } catch (error) {
+      if (error instanceof NotFoundError) {
+        sendError(res, error.message, error.statusCode);
+        return;
+      }
+      logger.error('Failed to archive email', { error, emailId: req.params.id });
+      sendError(res, 'Failed to archive email', 500);
+    }
+  }
+);
+
+/**
+ * POST /inbox/:id/star
+ * Star or unstar an email
+ */
+router.post(
+  '/:id/star',
+  validateUUID('id'),
+  validateBody(starEmailSchema),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.userId!;
+      const id = req.params.id as string;
+      const { starred } = req.body;
+
+      // Check if email exists
+      const existing = await inboxService.getEmailById(id, userId);
+      if (!existing) {
+        throw new NotFoundError('Email');
+      }
+
+      // Update labels to include or exclude 'STARRED'
+      const currentLabels = (existing.labels as string[]) || [];
+      const newLabels = starred
+        ? [...new Set([...currentLabels, 'STARRED'])]
+        : currentLabels.filter(l => l !== 'STARRED');
+
+      await inboxService.updateEmail(id, userId, { labels: newLabels });
+
+      const updated = await inboxService.getEmailById(id, userId);
+      sendSuccess(res, updated, starred ? 'Email starred' : 'Email unstarred');
+    } catch (error) {
+      if (error instanceof NotFoundError) {
+        sendError(res, error.message, error.statusCode);
+        return;
+      }
+      logger.error('Failed to star email', { error, emailId: req.params.id });
+      sendError(res, 'Failed to update email star status', 500);
+    }
+  }
+);
+
+/**
+ * POST /inbox/:id/draft-reply
+ * Generate a draft reply for an email
+ */
+router.post(
+  '/:id/draft-reply',
+  validateUUID('id'),
+  validateBody(draftReplySchema),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.userId!;
+      const id = req.params.id as string;
+      const { tone, includeQuote } = req.body;
+
+      // Check if email exists
+      const email = await inboxService.getEmailById(id, userId);
+      if (!email) {
+        throw new NotFoundError('Email');
+      }
+
+      // TODO: Integrate with AI agent to generate draft reply
+      // For now, return a placeholder
+      const draft = {
+        to: email.fromAddress,
+        subject: `Re: ${email.subject}`,
+        body: `[AI-generated draft reply will appear here based on the email content and ${tone || 'professional'} tone]`,
+        includesQuote: includeQuote ?? true,
+        originalEmailId: id,
+      };
+
+      sendSuccess(res, draft, 'Draft reply generated');
+    } catch (error) {
+      if (error instanceof NotFoundError) {
+        sendError(res, error.message, error.statusCode);
+        return;
+      }
+      logger.error('Failed to generate draft reply', { error, emailId: req.params.id });
+      sendError(res, 'Failed to generate draft reply', 500);
+    }
+  }
+);
+
+/**
+ * POST /inbox/bulk
+ * Bulk operations on emails
+ */
+router.post(
+  '/bulk',
+  validateBody(bulkEmailsSchema),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.userId!;
+      const { action, emailIds, category } = req.body;
+
+      let result: { count: number };
+
+      switch (action) {
+        case 'archive':
+          result = await inboxService.archiveEmails(emailIds, userId);
+          break;
+
+        case 'markRead':
+          result = await inboxService.markAsRead(emailIds, userId);
+          break;
+
+        case 'markUnread':
+          // Mark as unread by updating each email
+          for (const emailId of emailIds) {
+            await inboxService.updateEmail(emailId, userId, { isRead: false });
+          }
+          result = { count: emailIds.length };
+          break;
+
+        case 'delete':
+          // Soft delete by archiving (actual deletion would need a new service method)
+          result = await inboxService.archiveEmails(emailIds, userId);
+          break;
+
+        case 'updateCategory':
+          if (!category) {
+            sendError(res, 'Category is required for updateCategory action', 400);
+            return;
+          }
+          for (const emailId of emailIds) {
+            await inboxService.updateEmail(emailId, userId, { category });
+          }
+          result = { count: emailIds.length };
+          break;
+
+        default:
+          sendError(res, `Unknown action: ${action}`, 400);
+          return;
+      }
+
+      sendSuccess(res, result, `Bulk ${action} completed`);
+    } catch (error) {
+      logger.error('Bulk email operation failed', { error });
+      sendError(res, 'Bulk operation failed', 500);
+    }
+  }
+);
+
+/**
+ * POST /inbox/sync
+ * Trigger manual inbox sync
+ */
+router.post('/sync', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+
+    // TODO: Trigger inbox sync job
+    // For now, return a success message
+    sendSuccess(res, {
+      syncing: true,
+      message: 'Inbox sync initiated',
+    });
+  } catch (error) {
+    logger.error('Failed to trigger inbox sync', { error });
+    sendError(res, 'Failed to trigger inbox sync', 500);
+  }
+});
+
+export default router;

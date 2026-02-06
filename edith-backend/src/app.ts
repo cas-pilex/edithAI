@@ -14,6 +14,7 @@ import { jobSchedulerService } from './services/JobSchedulerService.js';
 import routes from './api/routes/index.js';
 import { requestLogger } from './api/middleware/audit.middleware.js';
 import { standardRateLimit } from './api/middleware/rateLimit.middleware.js';
+import { initializeWebSocket } from './api/websocket/index.js';
 import { logger } from './utils/logger.js';
 import { sendError } from './utils/helpers.js';
 
@@ -91,18 +92,8 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 
 // ==================== SOCKET.IO ====================
 
-io.on('connection', (socket) => {
-  logger.debug('Socket connected', { socketId: socket.id });
-
-  socket.on('authenticate', (_token: string) => {
-    // TODO: Verify token and join user-specific room
-    logger.debug('Socket authentication attempt', { socketId: socket.id });
-  });
-
-  socket.on('disconnect', () => {
-    logger.debug('Socket disconnected', { socketId: socket.id });
-  });
-});
+// Initialize WebSocket handlers
+initializeWebSocket(io);
 
 // ==================== GRACEFUL SHUTDOWN ====================
 
