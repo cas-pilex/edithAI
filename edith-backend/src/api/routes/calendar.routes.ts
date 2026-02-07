@@ -8,6 +8,8 @@ import type { Router as RouterType, Response } from 'express';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { validateBody, validateUUID } from '../middleware/validation.middleware.js';
 import { calendarService } from '../../services/CalendarService.js';
+import { calendarSyncWorker } from '../../integrations/google/CalendarSyncWorker.js';
+import { syncManager } from '../../integrations/common/SyncManager.js';
 import { sendSuccess, sendPaginated, sendError } from '../../utils/helpers.js';
 import { NotFoundError } from '../../utils/errors.js';
 import {
@@ -374,11 +376,23 @@ router.post('/sync', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId!;
 
-    // TODO: Trigger calendar sync job
+    // Check if Google Calendar is connected
+    const status = await syncManager.getSyncStatus(userId, 'GOOGLE_CALENDAR');
+    if (!status) {
+      sendError(res, 'Google Calendar not connected. Please connect first.', 400);
+      return;
+    }
+
+    // Return immediately, run sync in background
     sendSuccess(res, {
       syncing: true,
       message: 'Calendar sync initiated',
     });
+
+    // Fire-and-forget sync
+    calendarSyncWorker.syncAllCalendars(userId).catch(err =>
+      logger.error('Background calendar sync failed', { userId, error: err })
+    );
   } catch (error) {
     logger.error('Failed to trigger calendar sync', { error });
     sendError(res, 'Failed to trigger calendar sync', 500);

@@ -12,6 +12,8 @@ import { oauthManager } from '../../integrations/common/OAuthManager.js';
 import { prisma } from '../../database/client.js';
 import { logger } from '../../utils/logger.js';
 import { config } from '../../config/index.js';
+import { gmailSyncWorker } from '../../integrations/google/GmailSyncWorker.js';
+import { calendarSyncWorker } from '../../integrations/google/CalendarSyncWorker.js';
 import type { IntegrationProvider } from '../../types/index.js';
 
 const router: RouterType = Router();
@@ -120,6 +122,14 @@ router.get('/google/callback', async (req: Request, res: Response) => {
     }
 
     logger.info('Google OAuth successful', { userId: decodedState.userId });
+
+    // Trigger initial sync in the background (fire-and-forget)
+    gmailSyncWorker.performFullSync(decodedState.userId).catch(err =>
+      logger.error('Initial Gmail sync failed', { userId: decodedState.userId, error: err })
+    );
+    calendarSyncWorker.syncAllCalendars(decodedState.userId).catch(err =>
+      logger.error('Initial Calendar sync failed', { userId: decodedState.userId, error: err })
+    );
 
     const redirectUrl = decodedState.redirectUrl || `${config.server.frontendUrl}/settings/integrations`;
     res.redirect(`${redirectUrl}?success=google`);

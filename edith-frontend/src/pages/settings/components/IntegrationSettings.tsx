@@ -1,20 +1,24 @@
 import { useEffect, useState } from 'react';
-import { Mail, Calendar, MessageSquare, Send, CheckCircle, XCircle } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { toast } from 'sonner';
+import { Mail, Calendar, MessageSquare, Send, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api/client';
 
 const integrationDefs = [
-  { key: 'gmail', name: 'Gmail', icon: Mail, description: 'Connect your email for inbox management', connectUrl: '/api/oauth/google?service=gmail' },
-  { key: 'google_calendar', name: 'Google Calendar', icon: Calendar, description: 'Sync your calendar events', connectUrl: '/api/oauth/google?service=calendar' },
+  { key: 'gmail', name: 'Gmail', icon: Mail, description: 'Connect your email for inbox management', connectUrl: '/api/oauth/google?scopes=gmail' },
+  { key: 'google_calendar', name: 'Google Calendar', icon: Calendar, description: 'Sync your calendar events', connectUrl: '/api/oauth/google?scopes=calendar' },
   { key: 'slack', name: 'Slack', icon: MessageSquare, description: 'Get notifications in Slack', connectUrl: '/api/oauth/slack' },
   { key: 'telegram', name: 'Telegram', icon: Send, description: 'Chat with Edith via Telegram', connectUrl: null },
 ];
 
 export function IntegrationSettings() {
   const [statuses, setStatuses] = useState<Record<string, boolean>>({});
+  const [connecting, setConnecting] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  useEffect(() => {
+  const fetchStatuses = () => {
     api.get<Record<string, { connected: boolean }>>('/api/oauth/status')
       .then(({ data }) => {
         const map: Record<string, boolean> = {};
@@ -24,11 +28,36 @@ export function IntegrationSettings() {
         setStatuses(map);
       })
       .catch(() => {});
-  }, []);
+  };
 
-  const handleConnect = (integration: typeof integrationDefs[number]) => {
-    if (integration.connectUrl) {
-      window.location.href = `${api.defaults.baseURL || ''}${integration.connectUrl}`;
+  useEffect(() => {
+    fetchStatuses();
+
+    // Handle OAuth redirect success/error
+    const success = searchParams.get('success');
+    const error = searchParams.get('error');
+    if (success) {
+      toast.success(`Successfully connected ${success}`);
+      setSearchParams({}, { replace: true });
+      // Re-fetch statuses after a short delay to allow token storage to complete
+      setTimeout(fetchStatuses, 1000);
+    } else if (error) {
+      toast.error(`Connection failed: ${error}`);
+      setSearchParams({}, { replace: true });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleConnect = async (integration: typeof integrationDefs[number]) => {
+    if (!integration.connectUrl) return;
+    setConnecting(integration.key);
+    try {
+      const { data } = await api.get<{ authUrl: string }>(integration.connectUrl);
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      }
+    } catch {
+      toast.error('Failed to start connection');
+      setConnecting(null);
     }
   };
 
@@ -36,7 +65,10 @@ export function IntegrationSettings() {
     try {
       await api.delete(`/api/oauth/${provider.toLowerCase()}`);
       setStatuses((prev) => ({ ...prev, [provider]: false }));
-    } catch { /* ignore */ }
+      toast.success('Disconnected');
+    } catch {
+      toast.error('Failed to disconnect');
+    }
   };
 
   return (
@@ -47,6 +79,7 @@ export function IntegrationSettings() {
       <CardContent className="space-y-4">
         {integrationDefs.map((integration) => {
           const connected = statuses[integration.key] || false;
+          const isConnecting = connecting === integration.key;
           return (
             <div
               key={integration.key}
@@ -71,9 +104,12 @@ export function IntegrationSettings() {
               <Button
                 variant={connected ? 'outline' : 'default'}
                 size="sm"
+                disabled={isConnecting}
                 onClick={() => connected ? handleDisconnect(integration.key) : handleConnect(integration)}
               >
-                {connected ? 'Disconnect' : 'Connect'}
+                {isConnecting ? (
+                  <><Loader2 className="mr-1 h-3 w-3 animate-spin" /> Connecting...</>
+                ) : connected ? 'Disconnect' : 'Connect'}
               </Button>
             </div>
           );

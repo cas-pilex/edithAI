@@ -8,6 +8,8 @@ import type { Router as RouterType, Response } from 'express';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { validateBody, validateUUID } from '../middleware/validation.middleware.js';
 import { inboxService } from '../../services/InboxService.js';
+import { gmailSyncWorker } from '../../integrations/google/GmailSyncWorker.js';
+import { syncManager } from '../../integrations/common/SyncManager.js';
 import { sendSuccess, sendPaginated, sendError } from '../../utils/helpers.js';
 import { NotFoundError } from '../../utils/errors.js';
 import {
@@ -25,6 +27,22 @@ const router: RouterType = Router();
 router.use(authenticate);
 
 /**
+ * Transform DB email fields to frontend-expected field names
+ */
+function transformEmail(email: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...email,
+    from: email.fromName
+      ? `${email.fromName} <${email.fromAddress}>`
+      : (email.fromAddress as string),
+    to: email.toAddresses,
+    cc: email.ccAddresses || [],
+    bcc: [],
+    body: (email.bodyHtml || email.bodyText || '') as string,
+  };
+}
+
+/**
  * GET /inbox
  * List emails with filters and pagination
  */
@@ -33,7 +51,7 @@ router.get(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = req.userId!;
-      const { page, limit, category, isRead, isArchived, fromAddress, search, startDate, endDate } = req.query;
+      const { page, limit, category, isRead, isStarred, isArchived, fromAddress, search, startDate, endDate } = req.query;
 
       const pageNum = Number(page) || 1;
       const limitNum = Math.min(Number(limit) || 20, 100);
@@ -43,6 +61,7 @@ router.get(
       const parsedFilters = {
         category: category as string | undefined,
         isRead: isRead === 'true' ? true : isRead === 'false' ? false : undefined,
+        isStarred: isStarred === 'true' ? true : isStarred === 'false' ? false : undefined,
         isArchived: isArchived === 'true' ? true : isArchived === 'false' ? false : undefined,
         fromAddress: fromAddress as string | undefined,
         search: search as string | undefined,
@@ -56,7 +75,8 @@ router.get(
         { limit: limitNum, offset }
       );
 
-      sendPaginated(res, emails, pageNum, limitNum, total);
+      const transformed = emails.map(e => transformEmail(e as Record<string, unknown>));
+      sendPaginated(res, transformed, pageNum, limitNum, total);
     } catch (error) {
       logger.error('Failed to get emails', { error });
       sendError(res, 'Failed to retrieve emails', 500);
@@ -165,7 +185,8 @@ router.get('/thread/:threadId', async (req: AuthenticatedRequest, res: Response)
     const threadId = req.params.threadId as string;
 
     const emails = await inboxService.getThreadEmails(threadId, userId);
-    sendSuccess(res, emails);
+    const transformed = emails.map((e: unknown) => transformEmail(e as Record<string, unknown>));
+    sendSuccess(res, transformed);
   } catch (error) {
     logger.error('Failed to get thread emails', { error, threadId: req.params.threadId as string });
     sendError(res, 'Failed to retrieve thread emails', 500);
@@ -193,7 +214,7 @@ router.get(
       // Mark as read when viewed
       await inboxService.updateEmail(id, userId, { isRead: true });
 
-      sendSuccess(res, email);
+      sendSuccess(res, transformEmail(email as Record<string, unknown>));
     } catch (error) {
       if (error instanceof NotFoundError) {
         sendError(res, error.message, error.statusCode);
@@ -422,12 +443,30 @@ router.post('/sync', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId!;
 
-    // TODO: Trigger inbox sync job
-    // For now, return a success message
+    // Check if Gmail is connected
+    const status = await syncManager.getSyncStatus(userId, 'GMAIL');
+    if (!status) {
+      sendError(res, 'Gmail not connected. Please connect Gmail first.', 400);
+      return;
+    }
+
+    // Return immediately, run sync in background
     sendSuccess(res, {
       syncing: true,
       message: 'Inbox sync initiated',
     });
+
+    // Fire-and-forget sync
+    const syncToken = await syncManager.getSyncToken(userId, 'GMAIL');
+    if (syncToken) {
+      gmailSyncWorker.performIncrementalSync(userId, syncToken).catch(err =>
+        logger.error('Background incremental Gmail sync failed', { userId, error: err })
+      );
+    } else {
+      gmailSyncWorker.performFullSync(userId).catch(err =>
+        logger.error('Background full Gmail sync failed', { userId, error: err })
+      );
+    }
   } catch (error) {
     logger.error('Failed to trigger inbox sync', { error });
     sendError(res, 'Failed to trigger inbox sync', 500);

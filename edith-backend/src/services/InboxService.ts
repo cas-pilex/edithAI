@@ -10,6 +10,7 @@ import { prisma } from '../database/client.js';
 export interface EmailFilters {
   category?: string;
   isRead?: boolean;
+  isStarred?: boolean;
   isArchived?: boolean;
   fromAddress?: string;
   search?: string;
@@ -48,6 +49,7 @@ class InboxServiceImpl {
 
     if (filters.category) where.category = filters.category;
     if (filters.isRead !== undefined) where.isRead = filters.isRead;
+    if (filters.isStarred !== undefined) where.isStarred = filters.isStarred;
     if (filters.isArchived !== undefined) where.isArchived = filters.isArchived;
     if (filters.fromAddress) where.fromAddress = filters.fromAddress;
     if (filters.search) {
