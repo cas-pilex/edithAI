@@ -29,7 +29,8 @@ export function TaskFilters({ filters, onChange }: TaskFiltersProps) {
           <SelectItem value="all">All Status</SelectItem>
           <SelectItem value="TODO">To Do</SelectItem>
           <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
-          <SelectItem value="COMPLETED">Completed</SelectItem>
+          <SelectItem value="BLOCKED">Blocked</SelectItem>
+          <SelectItem value="DONE">Done</SelectItem>
         </SelectContent>
       </Select>
       <Select

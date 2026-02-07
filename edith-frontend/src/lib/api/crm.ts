@@ -4,21 +4,22 @@ import type { Contact, Interaction } from '@/types';
 
 export interface ContactFilters {
   search?: string;
-  relationship?: string;
+  relationshipType?: string;
   company?: string;
   minImportance?: number;
-  tag?: string;
+  interests?: string;
 }
 
 export interface CreateContactPayload {
-  email: string;
-  name: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
   company?: string;
-  title?: string;
+  jobTitle?: string;
   phone?: string;
-  relationship?: string;
-  importance?: number;
-  tags?: string[];
+  linkedinUrl?: string;
+  relationshipType?: string;
+  importanceScore?: number;
   notes?: string;
 }
 
@@ -26,9 +27,8 @@ export interface UpdateContactPayload extends Partial<CreateContactPayload> {}
 
 export interface CreateInteractionPayload {
   type: string;
-  subject?: string;
-  notes?: string;
-  date: string;
+  summary?: string;
+  date?: string;
   sentiment?: string;
 }
 

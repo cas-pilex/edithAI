@@ -18,7 +18,7 @@ interface TripCardProps {
 }
 
 export function TripCard({ trip }: TripCardProps) {
-  const budgetUsed = trip.budget ? ((trip.totalSpent || 0) / trip.budget) * 100 : 0;
+  const budgetUsed = trip.totalBudget ? ((trip.totalSpent || 0) / trip.totalBudget) * 100 : 0;
 
   return (
     <Card className="hover:border-primary/30 transition-colors cursor-pointer">
@@ -41,11 +41,11 @@ export function TripCard({ trip }: TripCardProps) {
             {format(new Date(trip.startDate), 'MMM d')} – {format(new Date(trip.endDate), 'MMM d, yyyy')}
           </span>
         </div>
-        {trip.budget && (
+        {trip.totalBudget && (
           <div className="space-y-1">
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">Budget</span>
-              <span>{formatCurrency(trip.totalSpent || 0, trip.currency)} / {formatCurrency(trip.budget, trip.currency)}</span>
+              <span>{formatCurrency(trip.totalSpent || 0, trip.currency)} / {formatCurrency(trip.totalBudget, trip.currency)}</span>
             </div>
             <div className="h-1.5 w-full rounded-full bg-muted">
               <div

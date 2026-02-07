@@ -9,18 +9,17 @@ export type TaskPriority = (typeof TaskPriority)[keyof typeof TaskPriority];
 export const TaskStatus = {
   TODO: 'TODO',
   IN_PROGRESS: 'IN_PROGRESS',
-  WAITING: 'WAITING',
-  COMPLETED: 'COMPLETED',
-  CANCELLED: 'CANCELLED',
+  BLOCKED: 'BLOCKED',
+  DONE: 'DONE',
 } as const;
 export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus];
 
 export const EmailCategory = {
-  PRIMARY: 'PRIMARY',
-  SOCIAL: 'SOCIAL',
-  PROMOTIONS: 'PROMOTIONS',
-  UPDATES: 'UPDATES',
-  FORUMS: 'FORUMS',
+  URGENT: 'URGENT',
+  ACTION_REQUIRED: 'ACTION_REQUIRED',
+  FOLLOW_UP: 'FOLLOW_UP',
+  FYI: 'FYI',
+  NEWSLETTER: 'NEWSLETTER',
   SPAM: 'SPAM',
 } as const;
 export type EmailCategory = (typeof EmailCategory)[keyof typeof EmailCategory];
@@ -49,9 +48,11 @@ export const AttendeeStatus = {
 export type AttendeeStatus = (typeof AttendeeStatus)[keyof typeof AttendeeStatus];
 
 export const ContactRelationship = {
-  COLLEAGUE: 'COLLEAGUE',
+  LEAD: 'LEAD',
   CLIENT: 'CLIENT',
-  VENDOR: 'VENDOR',
+  PARTNER: 'PARTNER',
+  INVESTOR: 'INVESTOR',
+  MENTOR: 'MENTOR',
   FRIEND: 'FRIEND',
   FAMILY: 'FAMILY',
   OTHER: 'OTHER',
@@ -84,11 +85,10 @@ export const BookingStatus = {
 export type BookingStatus = (typeof BookingStatus)[keyof typeof BookingStatus];
 
 export const ExpenseCategory = {
-  FOOD: 'FOOD',
-  TRANSPORT: 'TRANSPORT',
+  TRAVEL: 'TRAVEL',
+  MEALS: 'MEALS',
   ACCOMMODATION: 'ACCOMMODATION',
-  ENTERTAINMENT: 'ENTERTAINMENT',
-  OFFICE: 'OFFICE',
+  TRANSPORT: 'TRANSPORT',
   SOFTWARE: 'SOFTWARE',
   OTHER: 'OTHER',
 } as const;
@@ -96,8 +96,8 @@ export type ExpenseCategory = (typeof ExpenseCategory)[keyof typeof ExpenseCateg
 
 export const ExpenseStatus = {
   PENDING: 'PENDING',
+  CATEGORIZED: 'CATEGORIZED',
   APPROVED: 'APPROVED',
-  REJECTED: 'REJECTED',
   REIMBURSED: 'REIMBURSED',
 } as const;
 export type ExpenseStatus = (typeof ExpenseStatus)[keyof typeof ExpenseStatus];
@@ -112,9 +112,11 @@ export const ApprovalStatus = {
 export type ApprovalStatus = (typeof ApprovalStatus)[keyof typeof ApprovalStatus];
 
 export const InteractionType = {
-  EMAIL: 'EMAIL',
+  EMAIL_SENT: 'EMAIL_SENT',
+  EMAIL_RECEIVED: 'EMAIL_RECEIVED',
   MEETING: 'MEETING',
   CALL: 'CALL',
+  MESSAGE: 'MESSAGE',
   NOTE: 'NOTE',
 } as const;
 export type InteractionType = (typeof InteractionType)[keyof typeof InteractionType];

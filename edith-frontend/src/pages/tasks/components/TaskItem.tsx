@@ -19,7 +19,7 @@ interface TaskItemProps {
 export function TaskItem({ task }: TaskItemProps) {
   const completeMutation = useCompleteTask();
   const reopenMutation = useReopenTask();
-  const isCompleted = task.status === 'COMPLETED';
+  const isCompleted = task.status === 'DONE';
 
   const handleToggle = () => {
     if (isCompleted) {

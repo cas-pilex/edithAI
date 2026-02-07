@@ -40,12 +40,12 @@ export const inboxApi = {
   },
 
   markAsRead: async (id: string) => {
-    const { data } = await api.post<ApiResponse<null>>('/api/inbox/bulk', { ids: [id], action: 'markRead' });
+    const { data } = await api.post<ApiResponse<null>>('/api/inbox/bulk', { emailIds: [id], action: 'markRead' });
     return data;
   },
 
   markAsUnread: async (id: string) => {
-    const { data } = await api.post<ApiResponse<null>>('/api/inbox/bulk', { ids: [id], action: 'markUnread' });
+    const { data } = await api.post<ApiResponse<null>>('/api/inbox/bulk', { emailIds: [id], action: 'markUnread' });
     return data;
   },
 
@@ -70,7 +70,7 @@ export const inboxApi = {
   },
 
   bulkAction: async (ids: string[], action: string) => {
-    const { data } = await api.post<ApiResponse<null>>('/api/inbox/bulk', { ids, action });
+    const { data } = await api.post<ApiResponse<null>>('/api/inbox/bulk', { emailIds: ids, action });
     return data;
   },
 

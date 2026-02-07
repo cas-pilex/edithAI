@@ -8,9 +8,9 @@ export const profileSchema = z.object({
 export type ProfileFormData = z.infer<typeof profileSchema>;
 
 export const preferencesSchema = z.object({
-  communicationStyle: z.string(),
-  workHoursStart: z.string(),
-  workHoursEnd: z.string(),
-  aiSuggestions: z.boolean(),
+  communicationTone: z.enum(['FORMAL', 'CASUAL', 'MIXED']).optional(),
+  workingHoursStart: z.string().optional(),
+  workingHoursEnd: z.string().optional(),
+  allowAnalytics: z.boolean().optional(),
 });
 export type PreferencesFormData = z.infer<typeof preferencesSchema>;

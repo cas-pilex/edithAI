@@ -1,13 +1,14 @@
-import { Inbox, Star, AlertCircle, Tag, Users, Megaphone, RefreshCw } from 'lucide-react';
+import { Inbox, Star, AlertTriangle, Tag, Clock, ArrowRight, Info, Newspaper, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { EmailFilters } from '@/lib/api/inbox';
 
 const categories = [
-  { key: 'PRIMARY', label: 'Primary', Icon: Inbox },
-  { key: 'SOCIAL', label: 'Social', Icon: Users },
-  { key: 'PROMOTIONS', label: 'Promotions', Icon: Megaphone },
-  { key: 'UPDATES', label: 'Updates', Icon: RefreshCw },
+  { key: 'URGENT', label: 'Urgent', Icon: AlertTriangle },
+  { key: 'ACTION_REQUIRED', label: 'Action Required', Icon: ArrowRight },
+  { key: 'FOLLOW_UP', label: 'Follow Up', Icon: Clock },
+  { key: 'FYI', label: 'FYI', Icon: Info },
+  { key: 'NEWSLETTER', label: 'Newsletter', Icon: Newspaper },
   { key: 'SPAM', label: 'Spam', Icon: AlertCircle },
 ];
 

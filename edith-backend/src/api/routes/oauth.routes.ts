@@ -4,7 +4,8 @@
  */
 
 import { Router } from 'express';
-import type { Request, Response, NextFunction, Router as RouterType } from 'express';
+import type { Request, Response, Router as RouterType } from 'express';
+import { authenticate } from '../middleware/auth.middleware.js';
 import { googleOAuthClient, GMAIL_SCOPES, CALENDAR_SCOPES, ALL_GOOGLE_SCOPES } from '../../integrations/google/index.js';
 import { slackOAuthClient, SLACK_BOT_SCOPES, SLACK_USER_SCOPES } from '../../integrations/slack/index.js';
 import { oauthManager } from '../../integrations/common/OAuthManager.js';
@@ -27,22 +28,8 @@ interface OAuthState {
 }
 
 // ============================================================================
-// Middleware
+// Middleware - uses shared JWT authenticate from auth.middleware
 // ============================================================================
-
-// Simple auth middleware - extract user from session/token
-const requireAuth = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  // In production, verify JWT token
-  const userId = req.headers['x-user-id'] as string || (req.query.userId as string);
-
-  if (!userId) {
-    res.status(401).json({ error: 'Authentication required' });
-    return;
-  }
-
-  (req as Request & { userId: string }).userId = userId;
-  next();
-};
 
 // State encoding/decoding
 const encodeState = (state: OAuthState): string => {
@@ -65,7 +52,7 @@ const decodeState = (encoded: string): OAuthState | null => {
  * GET /api/oauth/google
  * Initiate Google OAuth flow (Gmail + Calendar combined)
  */
-router.get('/google', requireAuth, (req: Request, res: Response) => {
+router.get('/google', authenticate, (req: Request, res: Response) => {
   const userId = (req as Request & { userId: string }).userId;
   const scopes = req.query.scopes as string;
   const redirectUrl = req.query.redirectUrl as string;
@@ -150,7 +137,7 @@ router.get('/google/callback', async (req: Request, res: Response) => {
  * GET /api/oauth/slack
  * Initiate Slack OAuth flow
  */
-router.get('/slack', requireAuth, (req: Request, res: Response) => {
+router.get('/slack', authenticate, (req: Request, res: Response) => {
   const userId = (req as Request & { userId: string }).userId;
   const redirectUrl = req.query.redirectUrl as string;
 
@@ -215,7 +202,7 @@ router.get('/slack/callback', async (req: Request, res: Response) => {
  * GET /api/oauth/telegram
  * Get Telegram bot link
  */
-router.get('/telegram', requireAuth, (_req: Request, res: Response): void => {
+router.get('/telegram', authenticate, (_req: Request, res: Response): void => {
   const botUsername = config.telegram?.botUsername || process.env.TELEGRAM_BOT_USERNAME;
 
   if (!botUsername) {
@@ -280,7 +267,7 @@ router.get('/connect/telegram', async (req: Request, res: Response) => {
  * POST /api/oauth/whatsapp/request
  * Request WhatsApp verification code
  */
-router.post('/whatsapp/request', requireAuth, async (req: Request, res: Response): Promise<void> => {
+router.post('/whatsapp/request', authenticate, async (req: Request, res: Response): Promise<void> => {
   const userId = (req as Request & { userId: string }).userId;
   const { phoneNumber } = req.body;
 
@@ -320,7 +307,7 @@ router.post('/whatsapp/request', requireAuth, async (req: Request, res: Response
  * POST /api/oauth/whatsapp/verify
  * Verify WhatsApp code and connect
  */
-router.post('/whatsapp/verify', requireAuth, async (req: Request, res: Response): Promise<void> => {
+router.post('/whatsapp/verify', authenticate, async (req: Request, res: Response): Promise<void> => {
   const userId = (req as Request & { userId: string }).userId;
   const { phoneNumber, code } = req.body;
 
@@ -385,7 +372,7 @@ router.post('/whatsapp/verify', requireAuth, async (req: Request, res: Response)
  * DELETE /api/oauth/:provider
  * Disconnect an integration
  */
-router.delete('/:provider', requireAuth, async (req: Request, res: Response): Promise<void> => {
+router.delete('/:provider', authenticate, async (req: Request, res: Response): Promise<void> => {
   const userId = (req as Request & { userId: string }).userId;
   const provider = req.params.provider as string;
 
@@ -443,7 +430,7 @@ router.delete('/:provider', requireAuth, async (req: Request, res: Response): Pr
  * GET /api/oauth/status
  * Get connection status for all integrations
  */
-router.get('/status', requireAuth, async (req: Request, res: Response) => {
+router.get('/status', authenticate, async (req: Request, res: Response) => {
   const userId = (req as Request & { userId: string }).userId;
 
   try {

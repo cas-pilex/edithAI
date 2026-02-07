@@ -15,7 +15,7 @@ interface ContactCreateDialogProps {
 
 export function ContactCreateDialog({ open, onOpenChange }: ContactCreateDialogProps) {
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<CreateContactPayload>({
-    defaultValues: { relationship: 'COLLEAGUE', importance: 3 },
+    defaultValues: { relationshipType: 'OTHER', importanceScore: 5 },
   });
   const createMutation = useCreateContact();
 
@@ -34,14 +34,24 @@ export function ContactCreateDialog({ open, onOpenChange }: ContactCreateDialogP
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
-              <Input id="name" placeholder="John Doe" {...register('name', { required: 'Name is required' })} />
-              {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+              <Label htmlFor="firstName">First Name</Label>
+              <Input id="firstName" placeholder="John" {...register('firstName', { required: 'First name is required' })} />
+              {errors.firstName && <p className="text-xs text-destructive">{errors.firstName.message}</p>}
             </div>
             <div className="space-y-2">
+              <Label htmlFor="lastName">Last Name</Label>
+              <Input id="lastName" placeholder="Doe" {...register('lastName', { required: 'Last name is required' })} />
+              {errors.lastName && <p className="text-xs text-destructive">{errors.lastName.message}</p>}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" placeholder="john@example.com" {...register('email', { required: 'Email is required' })} />
-              {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
+              <Input id="email" type="email" placeholder="john@example.com" {...register('email')} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone</Label>
+              <Input id="phone" placeholder="+1 234 567 8900" {...register('phone')} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -50,29 +60,25 @@ export function ContactCreateDialog({ open, onOpenChange }: ContactCreateDialogP
               <Input id="company" placeholder="Acme Inc." {...register('company')} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="title">Title</Label>
-              <Input id="title" placeholder="CEO" {...register('title')} />
+              <Label htmlFor="jobTitle">Job Title</Label>
+              <Input id="jobTitle" placeholder="CEO" {...register('jobTitle')} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Relationship</Label>
-              <Select defaultValue="COLLEAGUE" onValueChange={(v) => setValue('relationship', v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="COLLEAGUE">Colleague</SelectItem>
-                  <SelectItem value="CLIENT">Client</SelectItem>
-                  <SelectItem value="VENDOR">Vendor</SelectItem>
-                  <SelectItem value="FRIEND">Friend</SelectItem>
-                  <SelectItem value="FAMILY">Family</SelectItem>
-                  <SelectItem value="OTHER">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="phone">Phone</Label>
-              <Input id="phone" placeholder="+1 234 567 8900" {...register('phone')} />
-            </div>
+          <div className="space-y-2">
+            <Label>Relationship</Label>
+            <Select defaultValue="OTHER" onValueChange={(v) => setValue('relationshipType', v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="LEAD">Lead</SelectItem>
+                <SelectItem value="CLIENT">Client</SelectItem>
+                <SelectItem value="PARTNER">Partner</SelectItem>
+                <SelectItem value="INVESTOR">Investor</SelectItem>
+                <SelectItem value="MENTOR">Mentor</SelectItem>
+                <SelectItem value="FRIEND">Friend</SelectItem>
+                <SelectItem value="FAMILY">Family</SelectItem>
+                <SelectItem value="OTHER">Other</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="notes">Notes</Label>

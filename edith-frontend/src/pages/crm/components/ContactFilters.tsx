@@ -21,17 +21,20 @@ export function ContactFilters({ filters, onChange }: ContactFiltersProps) {
         />
       </div>
       <Select
-        value={filters.relationship || 'all'}
-        onValueChange={(v) => onChange({ ...filters, relationship: v === 'all' ? undefined : v })}
+        value={filters.relationshipType || 'all'}
+        onValueChange={(v) => onChange({ ...filters, relationshipType: v === 'all' ? undefined : v })}
       >
         <SelectTrigger className="w-36"><SelectValue placeholder="Relationship" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All Types</SelectItem>
-          <SelectItem value="COLLEAGUE">Colleague</SelectItem>
+          <SelectItem value="LEAD">Lead</SelectItem>
           <SelectItem value="CLIENT">Client</SelectItem>
-          <SelectItem value="VENDOR">Vendor</SelectItem>
+          <SelectItem value="PARTNER">Partner</SelectItem>
+          <SelectItem value="INVESTOR">Investor</SelectItem>
+          <SelectItem value="MENTOR">Mentor</SelectItem>
           <SelectItem value="FRIEND">Friend</SelectItem>
           <SelectItem value="FAMILY">Family</SelectItem>
+          <SelectItem value="OTHER">Other</SelectItem>
         </SelectContent>
       </Select>
     </div>

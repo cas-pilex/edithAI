@@ -27,11 +27,10 @@ export function ExpenseFilters({ filters, onChange }: ExpenseFiltersProps) {
         <SelectTrigger className="w-40"><SelectValue placeholder="Category" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All Categories</SelectItem>
-          <SelectItem value="FOOD">Food</SelectItem>
-          <SelectItem value="TRANSPORT">Transport</SelectItem>
+          <SelectItem value="TRAVEL">Travel</SelectItem>
+          <SelectItem value="MEALS">Meals</SelectItem>
           <SelectItem value="ACCOMMODATION">Accommodation</SelectItem>
-          <SelectItem value="ENTERTAINMENT">Entertainment</SelectItem>
-          <SelectItem value="OFFICE">Office</SelectItem>
+          <SelectItem value="TRANSPORT">Transport</SelectItem>
           <SelectItem value="SOFTWARE">Software</SelectItem>
           <SelectItem value="OTHER">Other</SelectItem>
         </SelectContent>
@@ -44,8 +43,8 @@ export function ExpenseFilters({ filters, onChange }: ExpenseFiltersProps) {
         <SelectContent>
           <SelectItem value="all">All Status</SelectItem>
           <SelectItem value="PENDING">Pending</SelectItem>
+          <SelectItem value="CATEGORIZED">Categorized</SelectItem>
           <SelectItem value="APPROVED">Approved</SelectItem>
-          <SelectItem value="REJECTED">Rejected</SelectItem>
           <SelectItem value="REIMBURSED">Reimbursed</SelectItem>
         </SelectContent>
       </Select>

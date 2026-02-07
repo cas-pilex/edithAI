@@ -15,24 +15,28 @@ export interface User {
 export interface UserPreferences {
   id: string;
   userId: string;
-  communicationStyle: string;
-  workHoursStart: string;
-  workHoursEnd: string;
-  workDays: number[];
-  autoArchiveAfterDays: number;
-  aiSuggestions: boolean;
-  travelPreferences: {
-    seatPreference?: string;
-    mealPreference?: string;
-    hotelStars?: number;
-    loyaltyPrograms?: string[];
-  };
-  notificationPreferences: {
-    email: boolean;
-    push: boolean;
-    slack: boolean;
-    urgentOnly: boolean;
-  };
+  preferredChannel?: string;
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
+  digestFrequency?: string;
+  language?: string;
+  workingHoursStart: string;
+  workingHoursEnd: string;
+  workingDays: number[];
+  focusBlockDuration?: number;
+  meetingBufferMinutes?: number;
+  maxMeetingsPerDay?: number;
+  communicationTone?: string;
+  emailSignature?: string;
+  responseLength?: string;
+  preferredAirlines?: string[];
+  seatPreference?: string;
+  hotelStars?: number;
+  dietaryRestrictions?: string;
+  loyaltyPrograms?: Record<string, string>;
+  dataRetentionDays?: number;
+  allowAnalytics?: boolean;
+  marketingEmails?: boolean;
 }
 
 export interface Email {
@@ -112,16 +116,20 @@ export interface EventAttendee {
 export interface Contact {
   id: string;
   userId: string;
-  email: string;
-  name: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
   company?: string;
-  title?: string;
+  jobTitle?: string;
   phone?: string;
   avatar?: string;
-  relationship: string;
-  importance: number;
-  tags: string[];
+  linkedinUrl?: string;
+  relationshipType: string;
+  importanceScore: number;
+  interests?: string[];
   notes?: string;
+  birthday?: string;
+  anniversary?: string;
   lastContactedAt?: string;
   nextFollowUpAt?: string;
   createdAt: string;
@@ -148,7 +156,7 @@ export interface Trip {
   endDate: string;
   status: string;
   purpose?: string;
-  budget?: number;
+  totalBudget?: number;
   totalSpent?: number;
   currency: string;
   notes?: string;

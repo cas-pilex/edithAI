@@ -29,17 +29,19 @@ export function ContactDetail({ contactId }: ContactDetailProps) {
     );
   }
 
+  const displayName = [contact.firstName, contact.lastName].filter(Boolean).join(' ') || 'Unknown';
+
   return (
     <Card className="w-96 shrink-0 overflow-auto">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">{contact.name}</CardTitle>
-        <p className="text-sm text-muted-foreground">{contact.email}</p>
-        {contact.company && <p className="text-xs text-muted-foreground">{contact.company}{contact.title ? ` · ${contact.title}` : ''}</p>}
+        <CardTitle className="text-base">{displayName}</CardTitle>
+        {contact.email && <p className="text-sm text-muted-foreground">{contact.email}</p>}
+        {contact.company && <p className="text-xs text-muted-foreground">{contact.company}{contact.jobTitle ? ` · ${contact.jobTitle}` : ''}</p>}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap gap-1">
-          <Badge variant="secondary">{contact.relationship}</Badge>
-          {contact.tags.map((tag) => <Badge key={tag} variant="outline" className="text-xs">{tag}</Badge>)}
+          <Badge variant="secondary">{contact.relationshipType}</Badge>
+          {contact.interests?.map((tag) => <Badge key={tag} variant="outline" className="text-xs">{tag}</Badge>)}
         </div>
 
         {contact.nextFollowUpAt && (

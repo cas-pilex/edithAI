@@ -19,7 +19,12 @@ export function TripCreateDialog({ open, onOpenChange }: TripCreateDialogProps) 
   const createMutation = useCreateTrip();
 
   const onSubmit = (data: CreateTripPayload) => {
-    createMutation.mutate({ ...data, budget: data.budget ? Number(data.budget) : undefined }, {
+    createMutation.mutate({
+      ...data,
+      totalBudget: data.totalBudget ? Number(data.totalBudget) : undefined,
+      startDate: new Date(data.startDate).toISOString(),
+      endDate: new Date(data.endDate).toISOString(),
+    }, {
       onSuccess: () => { reset(); onOpenChange(false); },
     });
   };
@@ -57,8 +62,8 @@ export function TripCreateDialog({ open, onOpenChange }: TripCreateDialogProps) 
               <Input id="purpose" placeholder="Conference" {...register('purpose')} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="budget">Budget</Label>
-              <Input id="budget" type="number" step="0.01" placeholder="5000" {...register('budget')} />
+              <Label htmlFor="totalBudget">Budget</Label>
+              <Input id="totalBudget" type="number" step="0.01" placeholder="5000" {...register('totalBudget')} />
             </div>
           </div>
           <div className="space-y-2">

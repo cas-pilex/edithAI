@@ -14,14 +14,14 @@ export function PreferencesSettings() {
   const { register, handleSubmit, setValue, watch, formState: { isSubmitting } } = useForm<PreferencesFormData>({
     resolver: zodResolver(preferencesSchema),
     defaultValues: {
-      communicationStyle: 'professional',
-      workHoursStart: '09:00',
-      workHoursEnd: '17:00',
-      aiSuggestions: true,
+      communicationTone: 'MIXED',
+      workingHoursStart: '09:00',
+      workingHoursEnd: '17:00',
+      allowAnalytics: true,
     },
   });
 
-  const aiSuggestions = watch('aiSuggestions');
+  const allowAnalytics = watch('allowAnalytics');
 
   const onSubmit = async (data: PreferencesFormData) => {
     try {
@@ -41,33 +41,32 @@ export function PreferencesSettings() {
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
-              <Label>Communication Style</Label>
-              <Select defaultValue="professional" onValueChange={(v) => setValue('communicationStyle', v)}>
+              <Label>Communication Tone</Label>
+              <Select defaultValue="MIXED" onValueChange={(v) => setValue('communicationTone', v as 'FORMAL' | 'CASUAL' | 'MIXED')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="professional">Professional</SelectItem>
-                  <SelectItem value="friendly">Friendly</SelectItem>
-                  <SelectItem value="concise">Concise</SelectItem>
-                  <SelectItem value="formal">Formal</SelectItem>
+                  <SelectItem value="FORMAL">Formal</SelectItem>
+                  <SelectItem value="CASUAL">Casual</SelectItem>
+                  <SelectItem value="MIXED">Mixed</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="workHoursStart">Work Hours Start</Label>
-                <Input id="workHoursStart" type="time" {...register('workHoursStart')} />
+                <Label htmlFor="workingHoursStart">Work Hours Start</Label>
+                <Input id="workingHoursStart" type="time" {...register('workingHoursStart')} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="workHoursEnd">Work Hours End</Label>
-                <Input id="workHoursEnd" type="time" {...register('workHoursEnd')} />
+                <Label htmlFor="workingHoursEnd">Work Hours End</Label>
+                <Input id="workingHoursEnd" type="time" {...register('workingHoursEnd')} />
               </div>
             </div>
             <div className="flex items-center justify-between rounded-lg border border-border p-3">
               <div>
-                <Label>AI Suggestions</Label>
-                <p className="text-xs text-muted-foreground">Let Edith proactively suggest actions</p>
+                <Label>AI Analytics</Label>
+                <p className="text-xs text-muted-foreground">Allow Edith to analyze your usage patterns</p>
               </div>
-              <Switch checked={aiSuggestions} onCheckedChange={(v) => setValue('aiSuggestions', v)} />
+              <Switch checked={allowAnalytics} onCheckedChange={(v) => setValue('allowAnalytics', v)} />
             </div>
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? 'Saving...' : 'Save Preferences'}

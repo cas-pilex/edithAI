@@ -15,7 +15,7 @@ export interface CreateTripPayload {
   startDate: string;
   endDate: string;
   purpose?: string;
-  budget?: number;
+  totalBudget?: number;
   currency?: string;
   notes?: string;
 }

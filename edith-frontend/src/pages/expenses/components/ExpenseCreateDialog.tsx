@@ -14,12 +14,16 @@ interface ExpenseCreateDialogProps {
 
 export function ExpenseCreateDialog({ open, onOpenChange }: ExpenseCreateDialogProps) {
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<CreateExpensePayload>({
-    defaultValues: { currency: 'USD', category: 'OTHER' },
+    defaultValues: { currency: 'EUR', category: 'OTHER' },
   });
   const createMutation = useCreateExpense();
 
   const onSubmit = (data: CreateExpensePayload) => {
-    createMutation.mutate({ ...data, amount: Number(data.amount) }, {
+    createMutation.mutate({
+      ...data,
+      amount: Number(data.amount),
+      date: new Date(data.date).toISOString(),
+    }, {
       onSuccess: () => { reset(); onOpenChange(false); },
     });
   };
@@ -47,11 +51,10 @@ export function ExpenseCreateDialog({ open, onOpenChange }: ExpenseCreateDialogP
               <Select defaultValue="OTHER" onValueChange={(v) => setValue('category', v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="FOOD">Food</SelectItem>
-                  <SelectItem value="TRANSPORT">Transport</SelectItem>
+                  <SelectItem value="TRAVEL">Travel</SelectItem>
+                  <SelectItem value="MEALS">Meals</SelectItem>
                   <SelectItem value="ACCOMMODATION">Accommodation</SelectItem>
-                  <SelectItem value="ENTERTAINMENT">Entertainment</SelectItem>
-                  <SelectItem value="OFFICE">Office</SelectItem>
+                  <SelectItem value="TRANSPORT">Transport</SelectItem>
                   <SelectItem value="SOFTWARE">Software</SelectItem>
                   <SelectItem value="OTHER">Other</SelectItem>
                 </SelectContent>

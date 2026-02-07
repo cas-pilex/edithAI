@@ -21,7 +21,11 @@ export function EventCreateDialog({ open, onOpenChange }: EventCreateDialogProps
   const isAllDay = watch('isAllDay');
 
   const onSubmit = (data: CreateEventPayload) => {
-    createMutation.mutate(data, {
+    createMutation.mutate({
+      ...data,
+      startTime: new Date(data.startTime).toISOString(),
+      endTime: new Date(data.endTime).toISOString(),
+    }, {
       onSuccess: () => { reset(); onOpenChange(false); },
     });
   };
