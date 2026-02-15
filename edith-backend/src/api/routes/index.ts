@@ -22,6 +22,8 @@ import dashboardRoutes from './dashboard.routes.js';
 // Integration routes
 import oauthRoutes from './oauth.routes.js';
 import webhookRoutes from './webhook.routes.js';
+import telegramRoutes from './telegram.routes.js';
+import activityRoutes from './activity.routes.js';
 
 const router: RouterType = Router();
 
@@ -67,6 +69,10 @@ router.use('/api/reports', dashboardRoutes); // Reports are part of dashboard
 // OAuth and Integration routes
 router.use('/api/oauth', oauthRoutes);
 router.use('/api/integrations', oauthRoutes); // Alias for convenience
+router.use('/api/integrations/telegram', telegramRoutes);
+
+// ==================== ACTIVITY LOG ====================
+router.use('/api/activity', activityRoutes);
 
 // Webhook routes (no /api prefix - direct paths for external services)
 router.use('/webhooks', webhookRoutes);

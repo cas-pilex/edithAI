@@ -7,6 +7,7 @@ import {
   CheckSquare,
   Receipt,
   Plane,
+  ScrollText,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -25,6 +26,7 @@ const navItems = [
   { path: '/crm', label: 'CRM', icon: Users },
   { path: '/expenses', label: 'Expenses', icon: Receipt },
   { path: '/travel', label: 'Travel', icon: Plane },
+  { path: '/activity', label: 'Activity Log', icon: ScrollText },
 ];
 
 interface SidebarProps {

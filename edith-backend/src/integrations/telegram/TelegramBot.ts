@@ -8,6 +8,7 @@ import { message } from 'telegraf/filters';
 import { prisma } from '../../database/client.js';
 import { config } from '../../config/index.js';
 import { logger } from '../../utils/logger.js';
+import { incrementRateLimit } from '../../database/redis.js';
 
 // ============================================================================
 // Types
@@ -184,14 +185,13 @@ class TelegramBotImpl {
   private setupMiddleware(): void {
     if (!this.bot) return;
 
-    // Authentication middleware
+    // 1. Authentication middleware — lookup linked Edith user
     this.bot.use(async (ctx, next) => {
       const telegramUser = ctx.from;
       if (!telegramUser) {
         return next();
       }
 
-      // Try to find linked Edith user
       const linkedUser = await this.findLinkedUser(telegramUser.id);
 
       if (linkedUser) {
@@ -202,18 +202,101 @@ class TelegramBotImpl {
       return next();
     });
 
-    // Logging middleware
+    // 2. Guard middleware — block unlinked users from everything except /start and /help
+    this.bot.use(async (ctx, next) => {
+      if (ctx.session.isAuthenticated) {
+        return next();
+      }
+
+      // Allow /start and /help for unlinked users
+      const text = (ctx as unknown as { message?: { text?: string } }).message?.text;
+      if (text && (text.startsWith('/start') || text.startsWith('/help'))) {
+        return next();
+      }
+
+      // Allow callback queries that start with 'link:' for account linking flow
+      const callbackData = (ctx as unknown as { callbackQuery?: { data?: string } }).callbackQuery?.data;
+      if (callbackData && callbackData.startsWith('link:')) {
+        return next();
+      }
+
+      // Block everything else
+      const telegramId = ctx.from?.id;
+      logger.warn('Unauthorized Telegram access attempt', { telegramId, updateType: ctx.updateType });
+
+      if (ctx.callbackQuery) {
+        await ctx.answerCbQuery('⛔ Link your account first. Send /start to get started.');
+        return;
+      }
+
+      await ctx.reply(
+        '⛔ Your Telegram account is not linked to Edith.\n\n' +
+        'Send /start to connect your account.'
+      );
+    });
+
+    // 3. Rate limiting middleware — 30 messages per 60 seconds per user
+    this.bot.use(async (ctx, next) => {
+      const telegramId = ctx.from?.id;
+      if (!telegramId) return next();
+
+      const RATE_LIMIT = 30;
+      const WINDOW_SECONDS = 60;
+
+      try {
+        const { count } = await incrementRateLimit(`telegram:rate:${telegramId}`, WINDOW_SECONDS);
+
+        if (count > RATE_LIMIT) {
+          logger.warn('Telegram rate limit exceeded', { telegramId, count });
+          await ctx.reply('⚠️ You\'re sending messages too fast. Please wait a moment before trying again.');
+          return;
+        }
+      } catch (error) {
+        // Don't block on Redis errors, just log
+        logger.error('Rate limit check failed', { telegramId, error });
+      }
+
+      return next();
+    });
+
+    // 4. Audit logging middleware — log every interaction
     this.bot.use(async (ctx, next) => {
       const start = Date.now();
+      const telegramId = ctx.from?.id;
+      const updateType = ctx.updateType;
+      const isAuthenticated = ctx.session.isAuthenticated;
 
-      await next();
+      try {
+        await next();
+      } finally {
+        const duration = Date.now() - start;
 
-      const duration = Date.now() - start;
-      logger.debug('Telegram request processed', {
-        updateType: ctx.updateType,
-        from: ctx.from?.id,
-        duration,
-      });
+        logger.debug('Telegram request processed', {
+          telegramId,
+          updateType,
+          isAuthenticated,
+          duration,
+        });
+
+        // Write audit log for authenticated users
+        if (ctx.session.userId) {
+          prisma.auditLog.create({
+            data: {
+              userId: ctx.session.userId,
+              action: 'TELEGRAM_INTERACTION',
+              resource: 'TelegramBot',
+              metadata: {
+                telegramId,
+                updateType,
+                duration,
+                text: (ctx as unknown as { message?: { text?: string } }).message?.text?.substring(0, 100),
+              },
+            },
+          }).catch((err: unknown) => {
+            logger.error('Failed to write Telegram audit log', { error: err });
+          });
+        }
+      }
     });
   }
 

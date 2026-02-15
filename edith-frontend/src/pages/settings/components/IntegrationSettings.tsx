@@ -19,13 +19,21 @@ export function IntegrationSettings() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const fetchStatuses = () => {
+    // Fetch OAuth statuses
     api.get<Record<string, { connected: boolean }>>('/api/oauth/status')
       .then(({ data }) => {
         const map: Record<string, boolean> = {};
         for (const [provider, info] of Object.entries(data)) {
           map[provider] = info.connected;
         }
-        setStatuses(map);
+        setStatuses((prev) => ({ ...prev, ...map }));
+      })
+      .catch(() => {});
+
+    // Fetch Telegram status separately
+    api.get<{ linked: boolean }>('/api/integrations/telegram/status')
+      .then(({ data }) => {
+        setStatuses((prev) => ({ ...prev, telegram: data.linked }));
       })
       .catch(() => {});
   };
@@ -39,11 +47,29 @@ export function IntegrationSettings() {
     if (success) {
       toast.success(`Successfully connected ${success}`);
       setSearchParams({}, { replace: true });
-      // Re-fetch statuses after a short delay to allow token storage to complete
       setTimeout(fetchStatuses, 1000);
     } else if (error) {
       toast.error(`Connection failed: ${error}`);
       setSearchParams({}, { replace: true });
+    }
+
+    // Handle Telegram account linking token
+    const telegramToken = searchParams.get('telegram_token');
+    if (telegramToken) {
+      setConnecting('telegram');
+      api.post('/api/integrations/telegram/link', { token: telegramToken })
+        .then(() => {
+          toast.success('Telegram account linked successfully!');
+          setStatuses((prev) => ({ ...prev, telegram: true }));
+        })
+        .catch((err) => {
+          const msg = err?.response?.data?.error || 'Failed to link Telegram account';
+          toast.error(msg);
+        })
+        .finally(() => {
+          setConnecting(null);
+          setSearchParams({}, { replace: true });
+        });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -63,7 +89,11 @@ export function IntegrationSettings() {
 
   const handleDisconnect = async (provider: string) => {
     try {
-      await api.delete(`/api/oauth/${provider.toLowerCase()}`);
+      if (provider === 'telegram') {
+        await api.delete('/api/integrations/telegram/unlink');
+      } else {
+        await api.delete(`/api/oauth/${provider.toLowerCase()}`);
+      }
       setStatuses((prev) => ({ ...prev, [provider]: false }));
       toast.success('Disconnected');
     } catch {
@@ -105,7 +135,15 @@ export function IntegrationSettings() {
                 variant={connected ? 'outline' : 'default'}
                 size="sm"
                 disabled={isConnecting}
-                onClick={() => connected ? handleDisconnect(integration.key) : handleConnect(integration)}
+                onClick={() => {
+                  if (connected) {
+                    handleDisconnect(integration.key);
+                  } else if (integration.key === 'telegram') {
+                    toast.info('Search for @EdithAIBot on Telegram and send /start to connect.');
+                  } else {
+                    handleConnect(integration);
+                  }
+                }}
               >
                 {isConnecting ? (
                   <><Loader2 className="mr-1 h-3 w-3 animate-spin" /> Connecting...</>

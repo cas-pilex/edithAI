@@ -14,6 +14,7 @@ import { CRMPage } from '@/pages/crm/CRMPage';
 import { ExpensesPage } from '@/pages/expenses/ExpensesPage';
 import { TravelPage } from '@/pages/travel/TravelPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
+import { ActivityLogPage } from '@/pages/activity/ActivityLogPage';
 
 export function AppRoutes() {
   return (
@@ -37,6 +38,7 @@ export function AppRoutes() {
           <Route path="/crm" element={<CRMPage />} />
           <Route path="/expenses" element={<ExpensesPage />} />
           <Route path="/travel" element={<TravelPage />} />
+          <Route path="/activity" element={<ActivityLogPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Route>

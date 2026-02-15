@@ -3,23 +3,12 @@
  * Command handlers for Telegram bot
  */
 
+import crypto from 'crypto';
 import { Markup } from 'telegraf';
 import type { TelegramContext } from './TelegramBot.js';
 import { prisma } from '../../database/client.js';
 import { logger } from '../../utils/logger.js';
 import { config } from '../../config/index.js';
-
-// ============================================================================
-// Types
-// ============================================================================
-
-// Command context interface for future use
-interface _CommandContext {
-  userId: string | undefined;
-  isAuthenticated: boolean;
-  telegramId: number;
-  username?: string;
-}
 
 // ============================================================================
 // TelegramCommands Class
@@ -45,15 +34,16 @@ class TelegramCommandsImpl {
     }
 
     // User not linked yet - provide linking instructions
-    const linkToken = await this.generateLinkToken(user.id);
+    const chatId = ctx.chat?.id || user.id;
+    const linkToken = await this.generateLinkToken(user.id, chatId);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
     await ctx.reply(
       `Hello ${firstName}! 👋\n\n` +
       `I'm Edith, your AI executive assistant. To get started, you need to connect your Edith account.\n\n` +
-      `Click the button below or visit:\n` +
-      `${config.server?.apiUrl || 'https://edith.ai'}/connect/telegram?token=${linkToken}\n`,
+      `Click the button below to link your account:`,
       Markup.inlineKeyboard([
-        [Markup.button.url('Connect Account', `${config.server?.apiUrl || 'https://edith.ai'}/connect/telegram?token=${linkToken}`)],
+        [Markup.button.url('Connect Account', `${frontendUrl}/settings?telegram_token=${linkToken}`)],
       ])
     );
   }
@@ -62,7 +52,7 @@ class TelegramCommandsImpl {
    * Handle /today command - Daily briefing
    */
   async handleToday(ctx: TelegramContext): Promise<void> {
-    if (!this.requireAuth(ctx)) return;
+    if (!(await this.requireAuth(ctx))) return;
 
     const userId = ctx.session.userId!;
 
@@ -142,7 +132,7 @@ class TelegramCommandsImpl {
    * Handle /inbox command
    */
   async handleInbox(ctx: TelegramContext): Promise<void> {
-    if (!this.requireAuth(ctx)) return;
+    if (!(await this.requireAuth(ctx))) return;
 
     const userId = ctx.session.userId!;
 
@@ -189,7 +179,7 @@ class TelegramCommandsImpl {
    * Handle /tasks command
    */
   async handleTasks(ctx: TelegramContext): Promise<void> {
-    if (!this.requireAuth(ctx)) return;
+    if (!(await this.requireAuth(ctx))) return;
 
     const userId = ctx.session.userId!;
 
@@ -247,7 +237,7 @@ class TelegramCommandsImpl {
    * Handle /schedule command
    */
   async handleSchedule(ctx: TelegramContext): Promise<void> {
-    if (!this.requireAuth(ctx)) return;
+    if (!(await this.requireAuth(ctx))) return;
 
     const userId = ctx.session.userId!;
 
@@ -290,7 +280,7 @@ class TelegramCommandsImpl {
    * Handle /search command
    */
   async handleSearch(ctx: TelegramContext): Promise<void> {
-    if (!this.requireAuth(ctx)) return;
+    if (!(await this.requireAuth(ctx))) return;
 
     const text = ctx.message && 'text' in ctx.message ? ctx.message.text : '';
     const query = text.replace('/search', '').trim();
@@ -310,7 +300,7 @@ class TelegramCommandsImpl {
    * Handle /settings command
    */
   async handleSettings(ctx: TelegramContext): Promise<void> {
-    if (!this.requireAuth(ctx)) return;
+    if (!(await this.requireAuth(ctx))) return;
 
     await ctx.reply(
       '⚙️ *Settings*\n\n' +
@@ -359,38 +349,63 @@ class TelegramCommandsImpl {
     }
 
     // Check authentication for general messages
-    if (!this.requireAuth(ctx)) return;
+    if (!(await this.requireAuth(ctx))) return;
 
-    const text = ctx.message.text;
+    const rawText = ctx.message.text;
+    const text = this.sanitizeInput(rawText);
+    if (!text) return;
+
     const userId = ctx.session.userId!;
+    const sessionId = `telegram:${ctx.from!.id}:${Date.now()}`;
 
-    // Route to orchestrator for natural language processing
-    // For now, acknowledge and store
-    await ctx.reply('🤔 Processing your request...');
+    // Store interaction
+    const interaction = await prisma.telegramInteraction.create({
+      data: {
+        userId,
+        telegramId: String(ctx.from!.id),
+        chatId: String(ctx.chat?.id || ctx.from!.id),
+        type: 'MESSAGE',
+        text,
+        status: 'PROCESSING',
+      },
+    });
+
+    // Send thinking indicator
+    await ctx.reply('⏳ Even denken...');
 
     try {
-      // Store interaction for processing
-      await prisma.telegramInteraction.create({
-        data: {
-          userId,
-          telegramId: String(ctx.from!.id),
-          chatId: String(ctx.chat?.id || ctx.from!.id),
-          type: 'MESSAGE',
-          text,
-          status: 'PENDING',
-        },
+      const { orchestratorAgent } = await import('../../agents/OrchestratorAgent.js');
+
+      const context = {
+        userId,
+        userEmail: undefined,
+        userName: ctx.from?.first_name,
+        timezone: undefined,
+        preferences: {},
+      };
+
+      const result = await orchestratorAgent.process(context, text, sessionId);
+
+      // Truncate response for Telegram's 4096 char limit
+      let response = result.data || result.error || 'Done, but I have no specific response.';
+      if (response.length > 4000) {
+        response = response.substring(0, 3997) + '...';
+      }
+
+      await ctx.reply(response);
+
+      await prisma.telegramInteraction.update({
+        where: { id: interaction.id },
+        data: { status: 'COMPLETED', response: { text: response } },
+      });
+    } catch (error) {
+      logger.error('Failed to process message via orchestrator', { userId, error });
+
+      await prisma.telegramInteraction.update({
+        where: { id: interaction.id },
+        data: { status: 'FAILED' },
       });
 
-      // In full implementation, route to orchestrator agent
-      // const response = await orchestratorAgent.process(context, text);
-
-      await ctx.reply(
-        `I understood: "${text}"\n\n` +
-        `_In the full version, I would process this with my AI agents._`,
-        { parse_mode: 'Markdown' }
-      );
-    } catch (error) {
-      logger.error('Failed to process message', { userId, error });
       await ctx.reply('Sorry, I couldn\'t process your request. Please try again.');
     }
   }
@@ -399,7 +414,7 @@ class TelegramCommandsImpl {
    * Handle voice messages
    */
   async handleVoice(ctx: TelegramContext): Promise<void> {
-    if (!this.requireAuth(ctx)) return;
+    if (!(await this.requireAuth(ctx))) return;
 
     await ctx.reply(
       '🎤 Voice messages received!\n\n' +
@@ -412,7 +427,7 @@ class TelegramCommandsImpl {
    * Handle photo messages
    */
   async handlePhoto(ctx: TelegramContext): Promise<void> {
-    if (!this.requireAuth(ctx)) return;
+    if (!(await this.requireAuth(ctx))) return;
 
     await ctx.reply(
       '📷 Photo received!\n\n' +
@@ -425,7 +440,7 @@ class TelegramCommandsImpl {
    * Handle document messages
    */
   async handleDocument(ctx: TelegramContext): Promise<void> {
-    if (!this.requireAuth(ctx)) return;
+    if (!(await this.requireAuth(ctx))) return;
 
     await ctx.reply(
       '📄 Document received!\n\n' +
@@ -515,27 +530,60 @@ class TelegramCommandsImpl {
   // Helper Methods
   // ============================================================================
 
-  private requireAuth(ctx: TelegramContext): boolean {
-    if (!ctx.session.isAuthenticated) {
-      ctx.reply(
+  /**
+   * Hardened auth check — validates session AND verifies user exists in DB
+   */
+  private async requireAuth(ctx: TelegramContext): Promise<boolean> {
+    if (!ctx.session.isAuthenticated || !ctx.session.userId) {
+      await ctx.reply(
         '🔒 Please connect your Edith account first.\n\n' +
-        'Use /start to get started.',
-        { parse_mode: 'Markdown' }
+        'Use /start to get started.'
       );
       return false;
     }
+
+    // Verify user still exists in DB
+    const user = await prisma.user.findUnique({
+      where: { id: ctx.session.userId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      logger.warn('Telegram session references deleted user', {
+        userId: ctx.session.userId,
+        telegramId: ctx.from?.id,
+      });
+      ctx.session.isAuthenticated = false;
+      ctx.session.userId = undefined;
+      await ctx.reply(
+        '⛔ Your account could not be found. Please reconnect.\n\n' +
+        'Use /start to link your account again.'
+      );
+      return false;
+    }
+
     return true;
   }
 
-  private async generateLinkToken(telegramId: number): Promise<string> {
-    // Generate a secure token for account linking
-    const token = Buffer.from(`${telegramId}:${Date.now()}:${Math.random()}`).toString('base64url');
+  /**
+   * Sanitize user input before processing
+   */
+  private sanitizeInput(text: string): string {
+    return text
+      // Strip control characters except newlines and tabs
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+      .trim()
+      .substring(0, 4000);
+  }
 
-    // Store temporarily
+  private async generateLinkToken(telegramId: number, chatId: number): Promise<string> {
+    const token = crypto.randomBytes(32).toString('base64url');
+
     await prisma.telegramLinkToken.create({
       data: {
         token,
         telegramId: String(telegramId),
+        chatId: String(chatId),
         expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes
       },
     });
@@ -557,47 +605,98 @@ class TelegramCommandsImpl {
     );
   }
 
-  // Data fetching helpers (placeholders)
-  private async getTodayEvents(_userId: string): Promise<Array<{
+  // ============================================================================
+  // Data Fetching — wired to real services
+  // ============================================================================
+
+  private async getTodayEvents(userId: string): Promise<Array<{
     time: string;
     title: string;
     location?: string;
     meetingUrl?: string;
   }>> {
-    // In full implementation, fetch from CalendarService
-    return [];
+    const { calendarService } = await import('../../services/CalendarService.js');
+    const events = await calendarService.getDayEvents(userId, new Date());
+    return events.map((e) => ({
+      time: new Date(e.startTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      title: e.title,
+      location: e.location ?? undefined,
+      meetingUrl: e.meetingUrl ?? undefined,
+    }));
   }
 
-  private async getTodayTasks(_userId: string): Promise<Array<{
+  private async getTodayTasks(userId: string): Promise<Array<{
     title: string;
     priority: string;
     dueDate?: string;
   }>> {
-    // In full implementation, fetch from TaskService
-    return [];
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const tasks = await prisma.task.findMany({
+      where: {
+        userId,
+        status: { not: 'DONE' },
+        dueDate: { lte: endOfDay },
+      },
+      orderBy: { dueDate: 'asc' },
+      take: 20,
+    });
+
+    return tasks.map((t) => ({
+      title: t.title,
+      priority: t.priority,
+      dueDate: t.dueDate ? new Date(t.dueDate).toLocaleDateString() : undefined,
+    }));
   }
 
-  private async getAllTasks(_userId: string): Promise<Array<{
+  private async getAllTasks(userId: string): Promise<Array<{
     title: string;
     priority: string;
     dueDate?: string;
   }>> {
-    return [];
+    const tasks = await prisma.task.findMany({
+      where: {
+        userId,
+        status: { not: 'DONE' },
+      },
+      orderBy: [{ priority: 'desc' }, { dueDate: 'asc' }],
+      take: 20,
+    });
+
+    return tasks.map((t) => ({
+      title: t.title,
+      priority: t.priority,
+      dueDate: t.dueDate ? new Date(t.dueDate).toLocaleDateString() : undefined,
+    }));
   }
 
-  private async getEmailSummary(_userId: string): Promise<{ unread: number; important: number }> {
-    // In full implementation, fetch from EmailService
-    return { unread: 0, important: 0 };
+  private async getEmailSummary(userId: string): Promise<{ unread: number; important: number }> {
+    const { inboxService } = await import('../../services/InboxService.js');
+    const stats = await inboxService.getStats(userId);
+    const byCategory = stats.byCategory as Record<string, number>;
+    return {
+      unread: stats.unread,
+      important: byCategory['IMPORTANT'] ?? 0,
+    };
   }
 
-  private async getRecentEmails(_userId: string): Promise<Array<{
+  private async getRecentEmails(userId: string): Promise<Array<{
     from: string;
     subject: string;
     snippet: string;
     isRead: boolean;
     isImportant: boolean;
   }>> {
-    return [];
+    const { inboxService } = await import('../../services/InboxService.js');
+    const { emails } = await inboxService.getEmails(userId, {}, { limit: 10 });
+    return (emails as Array<{ from: string; subject: string; snippet: string; isRead: boolean; category?: string }>).map((e) => ({
+      from: e.from,
+      subject: e.subject,
+      snippet: e.snippet || '',
+      isRead: e.isRead,
+      isImportant: e.category === 'IMPORTANT',
+    }));
   }
 }
 

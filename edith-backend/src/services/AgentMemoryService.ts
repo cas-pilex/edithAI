@@ -245,6 +245,7 @@ class AgentMemoryServiceImpl {
     options: {
       domain?: AgentDomain;
       agentType?: string;
+      status?: string;
       limit?: number;
       offset?: number;
       startDate?: Date;
@@ -264,7 +265,7 @@ class AgentMemoryServiceImpl {
     }>;
     total: number;
   }> {
-    const { limit = 50, offset = 0, startDate, endDate, successOnly, agentType } = options;
+    const { limit = 50, offset = 0, startDate, endDate, successOnly, agentType, status } = options;
 
     const where: Record<string, unknown> = { userId };
 
@@ -272,7 +273,9 @@ class AgentMemoryServiceImpl {
       where.agentType = agentType;
     }
 
-    if (successOnly !== undefined) {
+    if (status) {
+      where.status = status;
+    } else if (successOnly !== undefined) {
       where.status = successOnly ? 'SUCCESS' : 'FAILURE';
     }
 
