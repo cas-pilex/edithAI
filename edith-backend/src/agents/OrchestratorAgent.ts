@@ -10,6 +10,7 @@ import { prisma } from '../database/client.js';
 // ApprovalService will be used for workflow approvals
 // import { approvalService } from '../services/ApprovalService.js';
 import { agentMemoryService } from '../services/AgentMemoryService.js';
+import { getConversationHistory, storeConversationMessage } from '../database/redis.js';
 import type {
   AIAgentContext,
   AIAgentResult,
@@ -305,14 +306,32 @@ Respond in the same language the user uses. If they write in Dutch, respond in D
     userMessage: string,
     sessionId?: string
   ): Promise<EnhancedAgentResult<string>> {
+    const sid = sessionId || crypto.randomUUID();
     const enhancedContext = await this.createEnhancedContext(
       context,
-      sessionId || crypto.randomUUID(),
+      sid,
       crypto.randomUUID()
     );
 
+    // Load conversation history for context
+    let conversationContext = '';
+    try {
+      const history = await getConversationHistory(sid);
+      if (history.length > 0) {
+        conversationContext = '\n\n## Recent Conversation\n' +
+          history.slice(-10).map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.substring(0, 300)}`).join('\n');
+      }
+    } catch (error) {
+      logger.debug('Failed to load conversation history', { sessionId: sid, error });
+    }
+
+    // Build message with conversation context
+    const messageWithHistory = conversationContext
+      ? `${conversationContext}\n\nUser (current message): ${userMessage}`
+      : userMessage;
+
     // First, analyze the request
-    const analysis = await this.analyze(enhancedContext, userMessage);
+    const analysis = await this.analyze(enhancedContext, messageWithHistory);
 
     if (!analysis.success || !analysis.data) {
       return {
@@ -327,16 +346,29 @@ Respond in the same language the user uses. If they write in Dutch, respond in D
     const decision = analysis.data;
 
     // Check if a workflow should be used
+    let result: EnhancedAgentResult<string>;
     if (decision.suggestedWorkflow && WORKFLOWS[decision.suggestedWorkflow]) {
-      return this.executeWorkflow(
+      result = await this.executeWorkflow(
         enhancedContext,
         WORKFLOWS[decision.suggestedWorkflow],
         decision.parameters
       );
+    } else {
+      // Route to the appropriate agent
+      result = await this.routeToAgent(enhancedContext, decision, userMessage);
     }
 
-    // Route to the appropriate agent
-    return this.routeToAgent(enhancedContext, decision, userMessage);
+    // Save conversation history
+    try {
+      await storeConversationMessage(sid, 'user', userMessage);
+      if (result.data) {
+        await storeConversationMessage(sid, 'assistant', result.data.substring(0, 2000));
+      }
+    } catch (error) {
+      logger.debug('Failed to save conversation history', { sessionId: sid, error });
+    }
+
+    return result;
   }
 
   /**

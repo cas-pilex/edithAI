@@ -9,6 +9,7 @@ import type { TelegramContext } from './TelegramBot.js';
 import { prisma } from '../../database/client.js';
 import { logger } from '../../utils/logger.js';
 import { config } from '../../config/index.js';
+import { clearConversation } from '../../database/redis.js';
 
 // ============================================================================
 // TelegramCommands Class
@@ -330,11 +331,86 @@ class TelegramCommandsImpl {
       '/tasks - View pending tasks\n' +
       '/schedule - View today\'s calendar\n' +
       '/search - Search across all data\n' +
+      '/new - Start a new conversation\n' +
+      '/notifications - Notification settings\n' +
       '/settings - Manage preferences\n' +
       '/help - Show this message\n\n' +
-      '_You can also send me natural language messages!_',
+      '_You can also send me natural language messages!_\n' +
+      '_I remember our conversation context, so you can refer to previous messages._',
       { parse_mode: 'Markdown' }
     );
+  }
+
+  /**
+   * Handle /new command - Reset conversation
+   */
+  async handleNew(ctx: TelegramContext): Promise<void> {
+    if (!(await this.requireAuth(ctx))) return;
+
+    const telegramId = ctx.from!.id;
+    const sessionId = `telegram:${telegramId}`;
+
+    try {
+      await clearConversation(sessionId);
+      await ctx.reply('🔄 Conversation reset! I\'ve forgotten our previous context.\n\nHow can I help you?');
+    } catch (error) {
+      logger.error('Failed to clear conversation', { sessionId, error });
+      await ctx.reply('Failed to reset conversation. Please try again.');
+    }
+  }
+
+  /**
+   * Handle /notifications command - Show notification preferences
+   */
+  async handleNotifications(ctx: TelegramContext): Promise<void> {
+    if (!(await this.requireAuth(ctx))) return;
+
+    const userId = ctx.session.userId!;
+
+    try {
+      const prefs = await prisma.notificationPreference.findMany({
+        where: { userId },
+      });
+
+      const TYPES = [
+        { type: 'DAILY_BRIEFING', label: 'Ochtend Briefing' },
+        { type: 'MEETING_PREP', label: 'Meeting Prep' },
+        { type: 'MEETING_REMINDER', label: 'Meeting Reminder' },
+        { type: 'EMAIL_ALERT', label: 'Email Alerts' },
+        { type: 'EMAIL_DIGEST', label: 'Email Digest' },
+        { type: 'TASK_REMINDER', label: 'Taak Reminders' },
+        { type: 'APPROVAL_REQUEST', label: 'Goedkeuringen' },
+      ];
+
+      const prefMap = new Map(prefs.map(p => [p.type, p]));
+
+      let message = '🔔 *Notification Settings*\n\n';
+      for (const t of TYPES) {
+        const pref = prefMap.get(t.type);
+        const enabled = pref ? pref.enabled : true;
+        const channel = pref ? pref.channel : 'IN_APP';
+        const statusIcon = enabled ? '✅' : '❌';
+        message += `${statusIcon} *${t.label}* → ${channel}\n`;
+      }
+      message += '\n_Use the buttons below to toggle notifications._';
+
+      const buttons = TYPES.map(t => {
+        const pref = prefMap.get(t.type);
+        const enabled = pref ? pref.enabled : true;
+        return [Markup.button.callback(
+          `${enabled ? '❌ Disable' : '✅ Enable'} ${t.label}`,
+          `notif_toggle:${t.type}`
+        )];
+      });
+
+      await ctx.reply(message, {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard(buttons),
+      });
+    } catch (error) {
+      logger.error('Failed to show notification settings', { userId, error });
+      await ctx.reply('Failed to load notification settings. Please try again.');
+    }
   }
 
   /**
@@ -358,7 +434,7 @@ class TelegramCommandsImpl {
     if (!text) return;
 
     const userId = ctx.session.userId!;
-    const sessionId = `telegram:${ctx.from!.id}:${Date.now()}`;
+    const sessionId = `telegram:${ctx.from!.id}`;
 
     // Store interaction
     const interaction = await prisma.telegramInteraction.create({
@@ -496,6 +572,40 @@ class TelegramCommandsImpl {
     // Acknowledge the callback
     await ctx.answerCbQuery();
 
+    // Handle parameterized callbacks
+    if (data.startsWith('approve:')) {
+      await this.handleApproveCallback(ctx, data.split(':')[1]);
+      return;
+    }
+    if (data.startsWith('reject:')) {
+      await this.handleRejectCallback(ctx, data.split(':')[1]);
+      return;
+    }
+    if (data.startsWith('modify:')) {
+      const approvalId = data.split(':')[1];
+      ctx.session.awaitingInput = `modify:${approvalId}`;
+      await ctx.reply('Type your modifications:');
+      return;
+    }
+    if (data.startsWith('notif_toggle:')) {
+      await this.handleNotificationToggle(ctx, data.replace('notif_toggle:', ''));
+      return;
+    }
+    if (data.startsWith('task_complete_')) {
+      await this.handleCompleteTask(ctx, data.replace('task_complete_', ''));
+      return;
+    }
+    if (data.startsWith('email_archive_')) {
+      await this.handleArchiveEmail(ctx, data.replace('email_archive_', ''));
+      return;
+    }
+    if (data.startsWith('email_reply_')) {
+      const emailId = data.replace('email_reply_', '');
+      ctx.session.awaitingInput = `reply_email:${emailId}`;
+      await ctx.reply('Type your reply:');
+      return;
+    }
+
     switch (data) {
       case 'view_inbox':
         await this.handleInbox(ctx);
@@ -512,24 +622,34 @@ class TelegramCommandsImpl {
       case 'refresh_tasks':
         await this.handleTasks(ctx);
         break;
+      case 'mark_all_read':
+        await this.handleMarkAllRead(ctx);
+        break;
+      case 'archive_read':
+        await this.handleArchiveReadEmails(ctx);
+        break;
       case 'add_task':
+      case 'new_task':
         await ctx.reply('What task would you like to add?');
         ctx.session.awaitingInput = 'new_task';
         break;
       case 'schedule_tomorrow':
-        await ctx.reply('Tomorrow\'s schedule coming soon...');
+        await this.handleScheduleTomorrow(ctx);
         break;
       case 'schedule_week':
-        await ctx.reply('This week\'s schedule coming soon...');
+        await this.handleScheduleWeek(ctx);
+        break;
+      case 'dismiss_reminder':
+        await ctx.editMessageText('✓ Dismissed');
         break;
       case 'settings_notifications':
-        await ctx.reply('Notification settings coming soon...');
+        await this.handleNotifications(ctx);
         break;
       case 'settings_briefing':
-        await ctx.reply('Briefing settings coming soon...');
+        await this.handleNotifications(ctx);
         break;
       case 'settings_services':
-        await ctx.reply('Connected services coming soon...');
+        await ctx.reply('Connected services: check your Settings page in the web app.');
         break;
       case 'settings_disconnect':
         await ctx.reply(
@@ -543,7 +663,6 @@ class TelegramCommandsImpl {
         );
         break;
       case 'confirm_disconnect':
-        // Disconnect account
         if (ctx.session.userId) {
           await prisma.userIntegration.update({
             where: { userId_provider: { userId: ctx.session.userId, provider: 'TELEGRAM' } },
@@ -559,6 +678,266 @@ class TelegramCommandsImpl {
         break;
       default:
         logger.debug('Unknown callback data', { data });
+    }
+  }
+
+  // ============================================================================
+  // Approval Callbacks
+  // ============================================================================
+
+  private async handleApproveCallback(ctx: TelegramContext, approvalId: string): Promise<void> {
+    if (!ctx.session.userId) return;
+
+    try {
+      const { approvalService } = await import('../../services/ApprovalService.js');
+      await approvalService.approve(approvalId, ctx.session.userId);
+
+      // Try to execute the approved action
+      await this.executeApprovedAction(ctx, approvalId);
+    } catch (error) {
+      logger.error('Failed to approve', { approvalId, error });
+      await ctx.reply('Failed to approve. The request may have expired.');
+    }
+  }
+
+  private async handleRejectCallback(ctx: TelegramContext, approvalId: string): Promise<void> {
+    if (!ctx.session.userId) return;
+
+    try {
+      const { approvalService } = await import('../../services/ApprovalService.js');
+      await approvalService.reject(approvalId, ctx.session.userId, 'Rejected via Telegram');
+      await ctx.editMessageText('❌ Rejected.');
+    } catch (error) {
+      logger.error('Failed to reject', { approvalId, error });
+      await ctx.reply('Failed to reject. The request may have expired.');
+    }
+  }
+
+  private async executeApprovedAction(ctx: TelegramContext, approvalId: string): Promise<void> {
+    const userId = ctx.session.userId!;
+
+    try {
+      // Get the approval/notification details
+      const notification = await prisma.notification.findFirst({
+        where: {
+          userId,
+          type: 'APPROVAL_REQUEST',
+          data: { path: ['approvalId'], equals: approvalId },
+        },
+      });
+
+      if (!notification) {
+        await ctx.editMessageText('✅ Approved! (Action will be processed.)');
+        return;
+      }
+
+      const data = notification.data as Record<string, unknown>;
+      const agentType = data.agentType as string;
+      const toolName = data.toolName as string;
+      const toolInput = data.toolInput as Record<string, unknown>;
+
+      if (agentType && toolName && toolInput) {
+        const { orchestratorAgent } = await import('../../agents/OrchestratorAgent.js');
+        const context = { userId, timezone: 'Europe/Amsterdam' };
+        const sessionId = `telegram:${ctx.from!.id}`;
+        const result = await orchestratorAgent.process(
+          context,
+          `Execute approved action: ${toolName} with params ${JSON.stringify(toolInput)}`,
+          sessionId
+        );
+
+        const response = result.data || 'Action executed.';
+        await ctx.editMessageText(`✅ Approved and executed!\n\n${response.substring(0, 500)}`);
+      } else {
+        await ctx.editMessageText('✅ Approved!');
+      }
+    } catch (error) {
+      logger.error('Failed to execute approved action', { approvalId, error });
+      await ctx.editMessageText('✅ Approved! (Action execution failed, please retry manually.)');
+    }
+  }
+
+  // ============================================================================
+  // Inline Action Callbacks
+  // ============================================================================
+
+  private async handleMarkAllRead(ctx: TelegramContext): Promise<void> {
+    if (!ctx.session.userId) return;
+
+    try {
+      await prisma.email.updateMany({
+        where: { userId: ctx.session.userId, isRead: false },
+        data: { isRead: true },
+      });
+      await ctx.reply('✅ All emails marked as read.');
+    } catch (error) {
+      logger.error('Failed to mark all read', { error });
+      await ctx.reply('Failed to mark emails as read.');
+    }
+  }
+
+  private async handleArchiveReadEmails(ctx: TelegramContext): Promise<void> {
+    if (!ctx.session.userId) return;
+
+    try {
+      const result = await prisma.email.updateMany({
+        where: { userId: ctx.session.userId, isRead: true, isArchived: false },
+        data: { isArchived: true },
+      });
+      await ctx.reply(`✅ Archived ${result.count} read emails.`);
+    } catch (error) {
+      logger.error('Failed to archive read emails', { error });
+      await ctx.reply('Failed to archive emails.');
+    }
+  }
+
+  private async handleCompleteTask(ctx: TelegramContext, taskId: string): Promise<void> {
+    if (!ctx.session.userId) return;
+
+    try {
+      await prisma.task.updateMany({
+        where: { id: taskId, userId: ctx.session.userId },
+        data: { status: 'DONE', completedAt: new Date() },
+      });
+      await ctx.reply('✅ Task completed!');
+    } catch (error) {
+      logger.error('Failed to complete task', { taskId, error });
+      await ctx.reply('Failed to complete task.');
+    }
+  }
+
+  private async handleArchiveEmail(ctx: TelegramContext, emailId: string): Promise<void> {
+    if (!ctx.session.userId) return;
+
+    try {
+      await prisma.email.updateMany({
+        where: { id: emailId, userId: ctx.session.userId },
+        data: { isArchived: true },
+      });
+      await ctx.reply('📁 Email archived.');
+    } catch (error) {
+      logger.error('Failed to archive email', { emailId, error });
+      await ctx.reply('Failed to archive email.');
+    }
+  }
+
+  private async handleNotificationToggle(ctx: TelegramContext, notifType: string): Promise<void> {
+    if (!ctx.session.userId) return;
+    const userId = ctx.session.userId;
+
+    try {
+      const existing = await prisma.notificationPreference.findUnique({
+        where: { userId_type: { userId, type: notifType } },
+      });
+
+      if (existing) {
+        await prisma.notificationPreference.update({
+          where: { id: existing.id },
+          data: { enabled: !existing.enabled },
+        });
+      } else {
+        // Create with disabled (was implicitly enabled before)
+        await prisma.notificationPreference.create({
+          data: { userId, type: notifType, channel: 'TELEGRAM', enabled: false },
+        });
+      }
+
+      // Refresh the notifications view
+      await this.handleNotifications(ctx);
+    } catch (error) {
+      logger.error('Failed to toggle notification', { notifType, error });
+      await ctx.reply('Failed to update notification setting.');
+    }
+  }
+
+  private async handleScheduleTomorrow(ctx: TelegramContext): Promise<void> {
+    if (!ctx.session.userId) return;
+    const userId = ctx.session.userId;
+
+    try {
+      const tz = await this.getUserTimezone(userId);
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+      const dayAfter = new Date(tomorrow);
+      dayAfter.setDate(dayAfter.getDate() + 1);
+
+      const events = await prisma.calendarEvent.findMany({
+        where: {
+          userId,
+          startTime: { gte: tomorrow, lt: dayAfter },
+          status: 'CONFIRMED',
+        },
+        orderBy: { startTime: 'asc' },
+      });
+
+      if (events.length === 0) {
+        await ctx.reply('📅 No meetings scheduled for tomorrow!');
+        return;
+      }
+
+      let message = '📅 *Tomorrow\'s Schedule*\n\n';
+      for (const event of events) {
+        const time = new Date(event.startTime).toLocaleTimeString('en-US', {
+          hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz,
+        });
+        message += `*${time}* - ${event.title}\n`;
+        if (event.location) message += `📍 ${event.location}\n`;
+        message += '\n';
+      }
+
+      await ctx.reply(message, { parse_mode: 'Markdown' });
+    } catch (error) {
+      logger.error('Failed to fetch tomorrow schedule', { error });
+      await ctx.reply('Failed to fetch tomorrow\'s schedule.');
+    }
+  }
+
+  private async handleScheduleWeek(ctx: TelegramContext): Promise<void> {
+    if (!ctx.session.userId) return;
+    const userId = ctx.session.userId;
+
+    try {
+      const tz = await this.getUserTimezone(userId);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const weekEnd = new Date(today);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+
+      const events = await prisma.calendarEvent.findMany({
+        where: {
+          userId,
+          startTime: { gte: today, lt: weekEnd },
+          status: 'CONFIRMED',
+        },
+        orderBy: { startTime: 'asc' },
+      });
+
+      if (events.length === 0) {
+        await ctx.reply('📅 No meetings this week!');
+        return;
+      }
+
+      let message = '📅 *This Week*\n\n';
+      let currentDay = '';
+      for (const event of events) {
+        const day = new Date(event.startTime).toLocaleDateString('en-US', {
+          weekday: 'long', month: 'short', day: 'numeric', timeZone: tz,
+        });
+        if (day !== currentDay) {
+          currentDay = day;
+          message += `\n*${day}*\n`;
+        }
+        const time = new Date(event.startTime).toLocaleTimeString('en-US', {
+          hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz,
+        });
+        message += `  ${time} - ${event.title}\n`;
+      }
+
+      await ctx.reply(message, { parse_mode: 'Markdown' });
+    } catch (error) {
+      logger.error('Failed to fetch week schedule', { error });
+      await ctx.reply('Failed to fetch this week\'s schedule.');
     }
   }
 

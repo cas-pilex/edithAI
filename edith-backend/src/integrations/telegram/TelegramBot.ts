@@ -56,6 +56,8 @@ export const BOT_COMMANDS: BotCommand[] = [
   { command: 'tasks', description: 'View your pending tasks' },
   { command: 'schedule', description: 'View today\'s calendar' },
   { command: 'search', description: 'Search across all data' },
+  { command: 'new', description: 'Start a new conversation' },
+  { command: 'notifications', description: 'Notification settings' },
   { command: 'settings', description: 'Manage your preferences' },
   { command: 'help', description: 'Show available commands' },
 ];
@@ -348,6 +350,16 @@ class TelegramBotImpl {
     this.bot.command('help', async (ctx) => {
       const { telegramCommands } = await import('./TelegramCommands.js');
       await telegramCommands.handleHelp(ctx);
+    });
+
+    this.bot.command('new', async (ctx) => {
+      const { telegramCommands } = await import('./TelegramCommands.js');
+      await telegramCommands.handleNew(ctx);
+    });
+
+    this.bot.command('notifications', async (ctx) => {
+      const { telegramCommands } = await import('./TelegramCommands.js');
+      await telegramCommands.handleNotifications(ctx);
     });
   }
 

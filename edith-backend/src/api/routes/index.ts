@@ -24,6 +24,7 @@ import oauthRoutes from './oauth.routes.js';
 import webhookRoutes from './webhook.routes.js';
 import telegramRoutes from './telegram.routes.js';
 import activityRoutes from './activity.routes.js';
+import notificationRoutes from './notification.routes.js';
 
 const router: RouterType = Router();
 
@@ -73,6 +74,9 @@ router.use('/api/integrations/telegram', telegramRoutes);
 
 // ==================== ACTIVITY LOG ====================
 router.use('/api/activity', activityRoutes);
+
+// ==================== NOTIFICATIONS ====================
+router.use('/api/notifications', notificationRoutes);
 
 // Webhook routes (no /api prefix - direct paths for external services)
 router.use('/webhooks', webhookRoutes);

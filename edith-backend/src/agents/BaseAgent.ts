@@ -732,16 +732,53 @@ export abstract class BaseAgent {
           agentType: this.agentType,
           action,
           toolName: action,
+          toolInput: proposedAction,
           category,
           proposedAction,
           sessionId: context.sessionId,
           requestId: context.requestId,
+          approvalId: '', // Will be set after creation
           approvalStatus: 'PENDING',
           expiresAt: expiresAt.toISOString(),
         } as object,
         status: 'PENDING',
       },
     });
+
+    // Update the approvalId to point to the notification itself
+    await prisma.notification.update({
+      where: { id: notification.id },
+      data: {
+        data: {
+          ...(notification.data as object),
+          approvalId: notification.id,
+        },
+      },
+    });
+
+    // Send notification via user's preferred channel (e.g. Telegram with approve/reject buttons)
+    try {
+      const { notificationService } = await import('../services/NotificationService.js');
+      await notificationService.send({
+        userId: context.userId,
+        type: 'APPROVAL_REQUEST',
+        title: `Approval Required: ${action}`,
+        body: `${this.agentType} wants to ${action}. Review and approve or reject.`,
+        priority: 'HIGH',
+        data: {
+          approvalId: notification.id,
+          agentType: this.agentType,
+          toolName: action,
+          toolInput: proposedAction,
+        },
+        actions: [
+          { type: 'button', label: 'Approve', action: `approve:${notification.id}` },
+          { type: 'button', label: 'Reject', action: `reject:${notification.id}` },
+        ],
+      });
+    } catch (notifError) {
+      logger.error('Failed to send approval notification', { error: notifError });
+    }
 
     return {
       id: notification.id,

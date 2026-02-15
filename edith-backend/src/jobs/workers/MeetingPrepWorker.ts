@@ -54,6 +54,26 @@ export class MeetingPrepWorker extends BaseWorker<MeetingPrepJobData> {
       };
     }
 
+    // Send urgent reminder if meeting is within 15 minutes
+    const minutesUntil = (new Date(event.startTime).getTime() - Date.now()) / (1000 * 60);
+    if (minutesUntil <= 15 && minutesUntil > 0) {
+      await notificationService.send({
+        userId,
+        type: 'MEETING_REMINDER',
+        title: `Meeting in ${Math.round(minutesUntil)} min: ${event.title}`,
+        body: event.location ? `📍 ${event.location}` : undefined,
+        priority: 'HIGH',
+        data: { eventId, meetingUrl: event.meetingUrl },
+        actions: event.meetingUrl ? [{
+          type: 'button',
+          label: 'Join Meeting',
+          action: event.meetingUrl,
+        }] : [],
+      });
+
+      logger.info('Meeting reminder sent', { userId, eventId, minutesUntil: Math.round(minutesUntil) });
+    }
+
     // Convert event with proper typing
     const typedEvent = {
       id: event.id,

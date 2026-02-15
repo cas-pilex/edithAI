@@ -311,7 +311,8 @@ model User {
   dataDeletionRequests  DataDeletionRequest[]
   successMetrics        SuccessMetrics[]
   weeklyReports         WeeklyReport[]
-  scheduledJobs         ScheduledJob[]
+  scheduledJobs              ScheduledJob[]
+  notificationPreferences    NotificationPreference[]
 
   @@index([email])
   @@index([createdAt])
@@ -941,6 +942,22 @@ model Notification {
   @@index([deliveredAt])
   @@index([expiresAt])
   @@map("notifications")
+}
+
+// ==================== NOTIFICATION PREFERENCES ====================
+
+model NotificationPreference {
+  id      String              @id @default(uuid())
+  userId  String
+  type    String              // DAILY_BRIEFING, MEETING_PREP, EMAIL_ALERT, EMAIL_DIGEST, TASK_REMINDER, APPROVAL_REQUEST, MEETING_REMINDER
+  channel NotificationChannel @default(IN_APP)
+  enabled Boolean             @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([userId])
+  @@map("notification_preferences")
 }
 
 // ==================== SECURITY & AUDIT ====================

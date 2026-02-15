@@ -311,4 +311,42 @@ export async function clearAgentMemory(userId: string, domain?: string): Promise
   }
 }
 
+// ==================== CONVERSATION MEMORY ====================
+
+const CONV_MAX_MESSAGES = 40;
+const CONV_TTL = 7200; // 2 hours
+
+export async function storeConversationMessage(
+  sessionId: string,
+  role: 'user' | 'assistant',
+  content: string
+): Promise<void> {
+  const client = getRedisClient();
+  const key = `conv:${sessionId}`;
+  await client.rpush(key, JSON.stringify({ role, content }));
+  // Trim to keep only the most recent messages
+  await client.ltrim(key, -CONV_MAX_MESSAGES, -1);
+  await client.expire(key, CONV_TTL);
+}
+
+export async function getConversationHistory(
+  sessionId: string
+): Promise<Array<{ role: string; content: string }>> {
+  const client = getRedisClient();
+  const key = `conv:${sessionId}`;
+  const messages = await client.lrange(key, 0, -1);
+  return messages.map((m: string) => {
+    try {
+      return JSON.parse(m) as { role: string; content: string };
+    } catch {
+      return { role: 'user', content: m };
+    }
+  });
+}
+
+export async function clearConversation(sessionId: string): Promise<void> {
+  const client = getRedisClient();
+  await client.del(`conv:${sessionId}`);
+}
+
 export default getRedisClient;

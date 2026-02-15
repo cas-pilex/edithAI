@@ -58,6 +58,20 @@ class NotificationServiceImpl {
       throw new Error('User not found');
     }
 
+    // Check per-type notification preference
+    const typePref = await prisma.notificationPreference.findUnique({
+      where: { userId_type: { userId: payload.userId, type: payload.type } },
+    });
+
+    // Skip if disabled (except URGENT priority)
+    if (typePref && !typePref.enabled && payload.priority !== 'URGENT') {
+      logger.debug('Notification skipped (disabled by user preference)', {
+        userId: payload.userId,
+        type: payload.type,
+      });
+      return 'skipped';
+    }
+
     // Check quiet hours for non-urgent notifications
     if (payload.priority !== 'URGENT') {
       const inQuietHours = await this.isInQuietHours(user);
@@ -66,8 +80,11 @@ class NotificationServiceImpl {
       }
     }
 
-    // Determine channel (explicit > user preference > default)
-    const channel = payload.channel || user.preferences?.preferredChannel || 'EMAIL';
+    // Determine channel: explicit > per-type preference > user default > EMAIL
+    const channel = payload.channel
+      || typePref?.channel
+      || user.preferences?.preferredChannel
+      || 'EMAIL';
 
     // Create notification record
     const notification = await prisma.notification.create({
