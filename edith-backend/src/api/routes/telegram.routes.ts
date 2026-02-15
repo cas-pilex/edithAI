@@ -7,6 +7,7 @@ import { Router } from 'express';
 import type { Router as RouterType } from 'express';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { prisma } from '../../database/client.js';
+import { config } from '../../config/index.js';
 import { logger } from '../../utils/logger.js';
 import type { AuthenticatedRequest } from '../../types/index.js';
 
@@ -107,8 +108,10 @@ router.get('/status', async (req: AuthenticatedRequest, res): Promise<void> => {
       },
     });
 
+    const botUsername = config.telegram?.botUsername || process.env.TELEGRAM_BOT_USERNAME || null;
+
     if (!integration || !integration.isActive) {
-      res.json({ linked: false });
+      res.json({ linked: false, botUsername });
       return;
     }
 
@@ -116,6 +119,7 @@ router.get('/status', async (req: AuthenticatedRequest, res): Promise<void> => {
 
     res.json({
       linked: true,
+      botUsername,
       username: metadata?.username || null,
       firstName: metadata?.firstName || null,
       linkedAt: integration.connectedAt,
