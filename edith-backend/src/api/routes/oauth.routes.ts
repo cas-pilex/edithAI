@@ -14,7 +14,7 @@ import { logger } from '../../utils/logger.js';
 import { config } from '../../config/index.js';
 import { gmailSyncWorker } from '../../integrations/google/GmailSyncWorker.js';
 import { calendarSyncWorker } from '../../integrations/google/CalendarSyncWorker.js';
-import type { IntegrationProvider } from '../../types/index.js';
+import type { IntegrationProvider, AuthenticatedRequest } from '../../types/index.js';
 
 const router: RouterType = Router();
 
@@ -54,8 +54,8 @@ const decodeState = (encoded: string): OAuthState | null => {
  * GET /api/oauth/google
  * Initiate Google OAuth flow (Gmail + Calendar combined)
  */
-router.get('/google', authenticate, (req: Request, res: Response) => {
-  const userId = (req as Request & { userId: string }).userId;
+router.get('/google', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.userId!;
   const scopes = req.query.scopes as string;
   const redirectUrl = req.query.redirectUrl as string;
 
@@ -147,8 +147,8 @@ router.get('/google/callback', async (req: Request, res: Response) => {
  * GET /api/oauth/slack
  * Initiate Slack OAuth flow
  */
-router.get('/slack', authenticate, (req: Request, res: Response) => {
-  const userId = (req as Request & { userId: string }).userId;
+router.get('/slack', authenticate, (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.userId!;
   const redirectUrl = req.query.redirectUrl as string;
 
   const state = encodeState({
@@ -277,8 +277,8 @@ router.get('/connect/telegram', async (req: Request, res: Response) => {
  * POST /api/oauth/whatsapp/request
  * Request WhatsApp verification code
  */
-router.post('/whatsapp/request', authenticate, async (req: Request, res: Response): Promise<void> => {
-  const userId = (req as Request & { userId: string }).userId;
+router.post('/whatsapp/request', authenticate, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const userId = req.userId!;
   const { phoneNumber } = req.body;
 
   if (!phoneNumber) {
@@ -317,8 +317,8 @@ router.post('/whatsapp/request', authenticate, async (req: Request, res: Respons
  * POST /api/oauth/whatsapp/verify
  * Verify WhatsApp code and connect
  */
-router.post('/whatsapp/verify', authenticate, async (req: Request, res: Response): Promise<void> => {
-  const userId = (req as Request & { userId: string }).userId;
+router.post('/whatsapp/verify', authenticate, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const userId = req.userId!;
   const { phoneNumber, code } = req.body;
 
   if (!phoneNumber || !code) {
@@ -382,8 +382,8 @@ router.post('/whatsapp/verify', authenticate, async (req: Request, res: Response
  * DELETE /api/oauth/:provider
  * Disconnect an integration
  */
-router.delete('/:provider', authenticate, async (req: Request, res: Response): Promise<void> => {
-  const userId = (req as Request & { userId: string }).userId;
+router.delete('/:provider', authenticate, async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  const userId = req.userId!;
   const provider = req.params.provider as string;
 
   const validProviders = ['google', 'gmail', 'calendar', 'slack', 'telegram', 'whatsapp'];
@@ -440,8 +440,8 @@ router.delete('/:provider', authenticate, async (req: Request, res: Response): P
  * GET /api/oauth/status
  * Get connection status for all integrations
  */
-router.get('/status', authenticate, async (req: Request, res: Response) => {
-  const userId = (req as Request & { userId: string }).userId;
+router.get('/status', authenticate, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.userId!;
 
   try {
     const integrations = await prisma.userIntegration.findMany({

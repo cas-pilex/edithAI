@@ -486,8 +486,18 @@ class TelegramBotImpl {
       select: { metadata: true },
     });
 
-    const metadata = integration?.metadata as Record<string, unknown> | null;
-    return (metadata?.telegramId as number) || null;
+    if (!integration?.metadata) return null;
+
+    const metadata = integration.metadata as Record<string, unknown>;
+    const telegramId = metadata.telegramId;
+
+    if (typeof telegramId === 'number') return telegramId > 0 ? telegramId : null;
+    if (typeof telegramId === 'string') {
+      const parsed = parseInt(telegramId, 10);
+      return isNaN(parsed) || parsed <= 0 ? null : parsed;
+    }
+
+    return null;
   }
 
   /**

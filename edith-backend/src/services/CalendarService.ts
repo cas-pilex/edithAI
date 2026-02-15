@@ -49,10 +49,16 @@ class CalendarServiceImpl {
 
     const where: Record<string, unknown> = { userId };
 
-    if (filters.startDate || filters.endDate) {
-      where.startTime = {};
-      if (filters.startDate) (where.startTime as Record<string, Date>).gte = filters.startDate;
-      if (filters.endDate) (where.startTime as Record<string, Date>).lte = filters.endDate;
+    if (filters.startDate && filters.endDate) {
+      // Proper overlap detection: event overlaps range if it starts before range ends AND ends after range starts
+      where.AND = [
+        { startTime: { lte: filters.endDate } },
+        { endTime: { gte: filters.startDate } },
+      ];
+    } else if (filters.startDate) {
+      where.endTime = { gte: filters.startDate };
+    } else if (filters.endDate) {
+      where.startTime = { lte: filters.endDate };
     }
     if (filters.isOnline !== undefined) where.isOnline = filters.isOnline;
     if (filters.status) where.status = filters.status;

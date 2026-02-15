@@ -20,7 +20,7 @@ export interface JobExecutionContext {
   jobId: string;
   userId: string;
   userTimezone: string;
-  userPreferences: UserPreferences;
+  userPreferences: UserPreferences | null;
   startTime: Date;
 }
 

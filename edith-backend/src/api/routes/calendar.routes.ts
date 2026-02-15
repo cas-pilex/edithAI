@@ -349,9 +349,23 @@ router.post(
       }
 
       // Update attendee status in the event
-      const attendees = (event.attendees as Array<{ email: string; status?: string; comment?: string }>) || [];
-      // TODO: Get user email and update their status in attendees array
-      // For now, just acknowledge the RSVP
+      const attendees = (event.attendees as Array<{ email: string; name?: string; status?: string; comment?: string }>) || [];
+      const userEmail = req.user?.email;
+
+      if (!userEmail) {
+        sendError(res, 'Cannot determine user email for RSVP', 400);
+        return;
+      }
+
+      // Find and update the user's attendee entry, or add a new one
+      const attendeeIndex = attendees.findIndex(a => a.email.toLowerCase() === userEmail.toLowerCase());
+      if (attendeeIndex >= 0) {
+        attendees[attendeeIndex] = { ...attendees[attendeeIndex], status, comment };
+      } else {
+        attendees.push({ email: userEmail, status, comment });
+      }
+
+      await calendarService.updateEvent(id, userId, { attendees });
 
       sendSuccess(res, {
         eventId: id,

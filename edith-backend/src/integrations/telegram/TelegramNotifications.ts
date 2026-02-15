@@ -416,18 +416,54 @@ class TelegramNotificationsImpl {
   }
 
   private async generateBriefingData(userId: string): Promise<DailyBriefingData> {
-    // In full implementation, fetch real data from services
-    // For now, return placeholder data
+    const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
 
-    return {
-      events: [],
-      tasks: [],
-      emails: {
-        unread: 0,
-        important: 0,
-        topSenders: [],
-      },
-    };
+    try {
+      const [events, tasks, unreadCount, importantCount] = await Promise.all([
+        prisma.calendarEvent.findMany({
+          where: { userId, startTime: { gte: startOfDay, lte: endOfDay }, status: { not: 'CANCELLED' } },
+          orderBy: { startTime: 'asc' },
+          take: 10,
+          select: { title: true, startTime: true, endTime: true, location: true, isOnline: true, meetingUrl: true },
+        }),
+        prisma.task.findMany({
+          where: { userId, status: { notIn: ['DONE'] }, dueDate: { lte: endOfDay } },
+          orderBy: { priority: 'desc' },
+          take: 10,
+          select: { id: true, title: true, priority: true, dueDate: true, status: true },
+        }),
+        prisma.email.count({ where: { userId, isRead: false, isArchived: false } }),
+        prisma.email.count({ where: { userId, isRead: false, isArchived: false, priorityScore: { gte: 70 } } }),
+      ]);
+
+      return {
+        events: events.map(e => ({
+          title: e.title,
+          time: e.startTime.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) +
+            ' - ' + e.endTime.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }),
+          location: e.location || (e.isOnline ? 'Online' : undefined),
+          meetingUrl: e.meetingUrl || undefined,
+        })),
+        tasks: tasks.map(t => ({
+          id: t.id,
+          title: t.title,
+          priority: t.priority as string,
+          dueDate: t.dueDate?.toISOString(),
+        })),
+        emails: {
+          unread: unreadCount,
+          important: importantCount,
+          topSenders: [],
+        },
+      };
+    } catch (error) {
+      logger.error('Failed to generate briefing data', { userId, error });
+      return { events: [], tasks: [], emails: { unread: 0, important: 0, topSenders: [] } };
+    }
   }
 }
 

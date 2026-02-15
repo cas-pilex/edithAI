@@ -112,7 +112,7 @@ Rules:
         }],
       });
 
-      const text = response.content[0].type === 'text' ? response.content[0].text : '';
+      const text = response.content?.[0]?.type === 'text' ? response.content[0].text : '';
       const parsed = JSON.parse(text) as DailyBriefing;
       parsed.totalUnread = emails.length;
 
@@ -245,7 +245,7 @@ ${threadContext ? `Previous messages in thread:\n${threadContext}` : ''}`,
         }],
       });
 
-      const text = response.content[0].type === 'text' ? response.content[0].text : '';
+      const text = response.content?.[0]?.type === 'text' ? response.content[0].text : '';
       logger.info('Draft reply generated', { emailId: context.email.id, tone: context.tone });
       return text;
     } catch (error) {
@@ -297,7 +297,7 @@ Provide:
         }],
       });
 
-      const text = response.content[0].type === 'text' ? response.content[0].text : '';
+      const text = response.content?.[0]?.type === 'text' ? response.content[0].text : '';
       logger.info('Meeting brief generated', { eventTitle: input.eventTitle });
       return text;
     } catch (error) {

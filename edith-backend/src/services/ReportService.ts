@@ -190,7 +190,7 @@ class ReportServiceImpl {
       prisma.email.count({
         where: {
           userId,
-          fromAddress: { contains: '@' }, // Sent emails typically have user's domain
+          labels: { has: 'SENT' },
           receivedAt: { gte: startDate, lte: endDate },
         },
       }),

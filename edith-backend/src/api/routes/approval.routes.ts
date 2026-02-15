@@ -11,6 +11,7 @@ import { sendSuccess, sendError } from '../../utils/helpers.js';
 import { z } from 'zod';
 import type { AuthenticatedRequest } from '../../types/index.js';
 import { approvalService, learningService } from '../../services/index.js';
+import { prisma } from '../../database/client.js';
 import { logger } from '../../utils/logger.js';
 
 const router: RouterType = Router();
@@ -471,7 +472,6 @@ router.get(
       }
 
       // Get from user preferences
-      const { prisma } = await import('../../database/client.js');
       const preferences = await prisma.userPreferences.findUnique({
         where: { userId: req.userId },
         select: {

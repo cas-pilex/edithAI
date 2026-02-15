@@ -352,11 +352,22 @@ class CalendarSyncWorkerImpl {
     let endTime: Date;
 
     if (isAllDay) {
-      startTime = new Date(event.start.date!);
-      endTime = new Date(event.end.date!);
+      if (!event.start.date || !event.end.date) {
+        throw new Error(`All-day event ${event.id} missing required date fields`);
+      }
+      startTime = new Date(event.start.date);
+      endTime = new Date(event.end.date);
     } else {
-      startTime = new Date(event.start.dateTime!);
-      endTime = new Date(event.end.dateTime!);
+      if (!event.start.dateTime || !event.end.dateTime) {
+        throw new Error(`Timed event ${event.id} missing required dateTime fields`);
+      }
+      startTime = new Date(event.start.dateTime);
+      endTime = new Date(event.end.dateTime);
+    }
+
+    // Validate parsed dates
+    if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+      throw new Error(`Event ${event.id} has invalid date values`);
     }
 
     // Check for online meeting

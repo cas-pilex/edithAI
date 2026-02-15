@@ -79,7 +79,7 @@ export class MeetingPrepWorker extends BaseWorker<MeetingPrepJobData> {
       id: event.id,
       title: event.title,
       description: event.description,
-      attendees: (event.attendees as string[]) || [],
+      attendees: Array.isArray(event.attendees) ? event.attendees.filter((a): a is string => typeof a === 'string') : [],
       startTime: event.startTime,
       endTime: event.endTime,
       location: event.location,

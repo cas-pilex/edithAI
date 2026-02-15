@@ -317,9 +317,12 @@ Respond in the same language the user uses. If they write in Dutch, respond in D
     let conversationContext = '';
     try {
       const history = await getConversationHistory(sid);
-      if (history.length > 0) {
+      if (history && history.length > 0) {
         conversationContext = '\n\n## Recent Conversation\n' +
-          history.slice(-10).map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.substring(0, 300)}`).join('\n');
+          history.slice(-10)
+            .filter(m => m?.role && m?.content)
+            .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${(m.content || '').substring(0, 300)}`)
+            .join('\n');
       }
     } catch (error) {
       logger.debug('Failed to load conversation history', { sessionId: sid, error });

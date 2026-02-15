@@ -99,6 +99,9 @@ export abstract class BaseAgent {
         messages,
       });
 
+      if (!response.content || response.content.length === 0) {
+        throw new Error('Empty response from AI');
+      }
       const content = response.content[0];
       if (content.type !== 'text') {
         throw new Error('Unexpected response type');

@@ -177,7 +177,7 @@ export abstract class BaseWorker<T extends BaseJobData> {
       jobId: job.id || 'unknown',
       userId: user.id,
       userTimezone: user.timezone,
-      userPreferences: user.preferences!,
+      userPreferences: user.preferences ?? null,
       startTime: new Date(),
     };
   }
@@ -264,8 +264,17 @@ export abstract class BaseWorker<T extends BaseJobData> {
     if (!prefs?.quietHoursStart || !prefs?.quietHoursEnd) return false;
 
     const now = this.getUserLocalTime(user.timezone);
-    const [startH, startM] = prefs.quietHoursStart.split(':').map(Number);
-    const [endH, endM] = prefs.quietHoursEnd.split(':').map(Number);
+    const startParts = prefs.quietHoursStart.split(':').map(Number);
+    const endParts = prefs.quietHoursEnd.split(':').map(Number);
+
+    if (startParts.length < 2 || endParts.length < 2 ||
+        isNaN(startParts[0]) || isNaN(startParts[1]) ||
+        isNaN(endParts[0]) || isNaN(endParts[1])) {
+      return false; // Invalid time format, skip quiet hours check
+    }
+
+    const [startH, startM] = startParts;
+    const [endH, endM] = endParts;
 
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
     const startMinutes = startH * 60 + startM;
