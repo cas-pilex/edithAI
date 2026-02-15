@@ -37,14 +37,16 @@ class TelegramCommandsImpl {
     const chatId = ctx.chat?.id || user.id;
     const linkToken = await this.generateLinkToken(user.id, chatId);
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const linkUrl = `${frontendUrl}/settings?telegram_token=${linkToken}`;
 
+    // Telegram rejects localhost URLs in inline keyboard buttons,
+    // so we send the link as text (works in both dev and prod).
+    // In production with an HTTPS URL, we could use an inline button instead.
     await ctx.reply(
       `Hello ${firstName}! 👋\n\n` +
       `I'm Edith, your AI executive assistant. To get started, you need to connect your Edith account.\n\n` +
-      `Click the button below to link your account:`,
-      Markup.inlineKeyboard([
-        [Markup.button.url('Connect Account', `${frontendUrl}/settings?telegram_token=${linkToken}`)],
-      ])
+      `Open this link to connect:\n${linkUrl}\n\n` +
+      `The link expires in 10 minutes.`
     );
   }
 
