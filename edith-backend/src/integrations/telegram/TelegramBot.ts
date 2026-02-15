@@ -132,8 +132,12 @@ class TelegramBotImpl {
       logger.info('Telegram bot webhook set', { url: webhookUrl });
     } else {
       // Use polling mode (for development)
-      await this.bot.launch();
-      this.isRunning = true;
+      // launch() is long-running, don't await it — let it run in the background
+      this.bot.launch().then(() => {
+        this.isRunning = true;
+      }).catch((err) => {
+        logger.error('Telegram bot polling failed', { error: err });
+      });
 
       logger.info('Telegram bot started in polling mode');
     }

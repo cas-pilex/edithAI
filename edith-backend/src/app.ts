@@ -153,6 +153,14 @@ async function main(): Promise<void> {
       await scheduleMaintenanceJobs();
     }
 
+    // Start Telegram bot (non-blocking, fails gracefully if not configured)
+    try {
+      const { telegramBot } = await import('./integrations/telegram/TelegramBot.js');
+      await telegramBot.start();
+    } catch (err) {
+      logger.warn('Telegram bot failed to start', { error: err });
+    }
+
     // Start server
     httpServer.listen(config.server.port, () => {
       logger.info(`
