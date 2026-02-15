@@ -209,8 +209,22 @@ export const bulkEmailsSchema = z.object({
 });
 
 export const draftReplySchema = z.object({
-  tone: z.enum(['FORMAL', 'CASUAL', 'MIXED']).optional(),
+  tone: z.string().optional(),
   includeQuote: z.boolean().optional(),
+});
+
+export const sendReplySchema = z.object({
+  body: z.string().min(1, 'Reply body is required'),
+  isHtml: z.boolean().optional(),
+});
+
+export const sendEmailSchema = z.object({
+  to: z.array(z.string().email()).min(1),
+  cc: z.array(z.string().email()).optional(),
+  bcc: z.array(z.string().email()).optional(),
+  subject: z.string().min(1),
+  body: z.string().min(1),
+  isHtml: z.boolean().optional(),
 });
 
 // ==================== CALENDAR SCHEMAS ====================

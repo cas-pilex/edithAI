@@ -12,6 +12,7 @@ import { inboxService } from '../../services/InboxService.js';
 import { gmailSyncWorker } from '../../integrations/google/GmailSyncWorker.js';
 import { syncManager } from '../../integrations/common/SyncManager.js';
 import { aiService } from '../../services/AIService.js';
+import { createGmailClientForUser } from '../../integrations/google/GmailClient.js';
 import { sendSuccess, sendPaginated, sendError } from '../../utils/helpers.js';
 import { NotFoundError } from '../../utils/errors.js';
 import {
@@ -19,6 +20,8 @@ import {
   starEmailSchema,
   bulkEmailsSchema,
   draftReplySchema,
+  sendReplySchema,
+  sendEmailSchema,
 } from '../../utils/validation.js';
 import type { AuthenticatedRequest } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
@@ -435,12 +438,44 @@ router.post(
         throw new NotFoundError('Email');
       }
 
-      // TODO: Integrate with AI agent to generate draft reply
-      // For now, return a placeholder
+      if (!aiService.isConfigured) {
+        sendError(res, 'AI service not configured', 503);
+        return;
+      }
+
+      // Get thread context for better replies
+      const threadEmails = email.threadId
+        ? await inboxService.getThreadEmails(email.threadId, userId)
+        : [];
+
+      const draftBody = await aiService.generateDraftReply({
+        email: {
+          id: email.id,
+          fromAddress: email.fromAddress,
+          fromName: email.fromName,
+          subject: email.subject,
+          bodyText: email.bodyText,
+          receivedAt: email.receivedAt,
+        },
+        threadEmails: (threadEmails as Array<{ fromAddress: string; fromName: string | null; bodyText: string | null; receivedAt: Date }>).map(e => ({
+          fromAddress: e.fromAddress,
+          fromName: e.fromName,
+          bodyText: e.bodyText,
+          receivedAt: e.receivedAt,
+        })),
+        tone: tone || 'professional',
+      });
+
+      if (!draftBody) {
+        sendError(res, 'Failed to generate draft reply', 500);
+        return;
+      }
+
       const draft = {
         to: email.fromAddress,
         subject: `Re: ${email.subject}`,
-        body: `[AI-generated draft reply will appear here based on the email content and ${tone || 'professional'} tone]`,
+        body: draftBody,
+        draft: draftBody,
         includesQuote: includeQuote ?? true,
         originalEmailId: id,
       };
@@ -453,6 +488,66 @@ router.post(
       }
       logger.error('Failed to generate draft reply', { error, emailId: req.params.id });
       sendError(res, 'Failed to generate draft reply', 500);
+    }
+  }
+);
+
+/**
+ * POST /inbox/:id/reply
+ * Send a reply to an email via Gmail
+ */
+router.post(
+  '/:id/reply',
+  validateUUID('id'),
+  validateBody(sendReplySchema),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.userId!;
+      const id = req.params.id as string;
+      const { body, isHtml } = req.body;
+
+      const email = await inboxService.getEmailById(id, userId);
+      if (!email) {
+        throw new NotFoundError('Email');
+      }
+
+      const gmailClient = await createGmailClientForUser(userId);
+      if (!gmailClient) {
+        sendError(res, 'Gmail not connected', 400);
+        return;
+      }
+
+      const result = await gmailClient.sendMessage({
+        to: [email.fromAddress],
+        subject: `Re: ${email.subject}`,
+        body,
+        isHtml,
+        replyToMessageId: email.externalId,
+        threadId: email.threadId ?? undefined,
+      });
+
+      // Save as EmailDraft with SENT status
+      await prisma.emailDraft.create({
+        data: {
+          userId,
+          emailId: id,
+          toAddresses: [email.fromAddress],
+          subject: `Re: ${email.subject}`,
+          body,
+          tone: 'MIXED',
+          status: 'SENT',
+          sentAt: new Date(),
+        },
+      });
+
+      sendSuccess(res, { sent: true, messageId: result.id }, 'Reply sent');
+    } catch (error) {
+      if (error instanceof NotFoundError) {
+        sendError(res, error.message, error.statusCode);
+        return;
+      }
+      logger.error('Failed to send reply', { error, emailId: req.params.id });
+      sendError(res, 'Failed to send reply', 500);
     }
   }
 );
@@ -554,5 +649,53 @@ router.post('/sync', async (req: AuthenticatedRequest, res: Response) => {
     sendError(res, 'Failed to trigger inbox sync', 500);
   }
 });
+
+/**
+ * POST /inbox/send
+ * Send a new email via Gmail
+ */
+router.post(
+  '/send',
+  validateBody(sendEmailSchema),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.userId!;
+      const { to, cc, bcc, subject, body, isHtml } = req.body;
+
+      const gmailClient = await createGmailClientForUser(userId);
+      if (!gmailClient) {
+        sendError(res, 'Gmail not connected', 400);
+        return;
+      }
+
+      const result = await gmailClient.sendMessage({
+        to,
+        cc,
+        bcc,
+        subject,
+        body,
+        isHtml,
+      });
+
+      // Save as EmailDraft with SENT status
+      await prisma.emailDraft.create({
+        data: {
+          userId,
+          toAddresses: to,
+          ccAddresses: cc || [],
+          subject,
+          body,
+          status: 'SENT',
+          sentAt: new Date(),
+        },
+      });
+
+      sendSuccess(res, { sent: true, messageId: result.id }, 'Email sent');
+    } catch (error) {
+      logger.error('Failed to send email', { error });
+      sendError(res, 'Failed to send email', 500);
+    }
+  }
+);
 
 export default router;

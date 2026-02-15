@@ -47,6 +47,8 @@ export interface InboxProcessorJobData extends BaseJobData {
   // System-wide job, processes all users
   batchSize?: number;
   maxEmailsPerUser?: number;
+  // Targeted mode: process only a specific user (triggered after sync)
+  targetUserId?: string;
 }
 
 export interface CalendarOptimizerJobData extends BaseJobData {

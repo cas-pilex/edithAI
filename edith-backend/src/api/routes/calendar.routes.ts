@@ -8,6 +8,8 @@ import type { Router as RouterType, Response } from 'express';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { validateBody, validateUUID } from '../middleware/validation.middleware.js';
 import { calendarService } from '../../services/CalendarService.js';
+import { meetingPrepService } from '../../services/MeetingPrepService.js';
+import { aiService } from '../../services/AIService.js';
 import { calendarSyncWorker } from '../../integrations/google/CalendarSyncWorker.js';
 import { syncManager } from '../../integrations/common/SyncManager.js';
 import { sendSuccess, sendPaginated, sendError } from '../../utils/helpers.js';
@@ -398,5 +400,116 @@ router.post('/sync', async (req: AuthenticatedRequest, res: Response) => {
     sendError(res, 'Failed to trigger calendar sync', 500);
   }
 });
+
+/**
+ * GET /calendar/events/:id/prep
+ * Get meeting prep for an event
+ */
+router.get(
+  '/events/:id/prep',
+  validateUUID('id'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.userId!;
+      const eventId = req.params.id as string;
+
+      const prep = await meetingPrepService.getMeetingPrep(eventId, userId);
+      if (!prep) {
+        sendSuccess(res, null);
+        return;
+      }
+
+      sendSuccess(res, prep);
+    } catch (error) {
+      logger.error('Failed to get meeting prep', { error, eventId: req.params.id });
+      sendError(res, 'Failed to get meeting prep', 500);
+    }
+  }
+);
+
+/**
+ * POST /calendar/events/:id/prep/generate
+ * Generate meeting prep brief with AI summary
+ */
+router.post(
+  '/events/:id/prep/generate',
+  validateUUID('id'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.userId!;
+      const eventId = req.params.id as string;
+
+      // Generate the brief (fetches event, attendees, email history, talking points)
+      const brief = await meetingPrepService.generateBrief(eventId, userId);
+
+      // Enhance with AI summary if configured
+      let aiSummary: string | null = null;
+      if (aiService.isConfigured) {
+        aiSummary = await aiService.generateMeetingBrief({
+          eventTitle: brief.event.title,
+          eventDescription: brief.event.description,
+          attendees: brief.attendees.map(a => ({
+            email: a.email,
+            name: a.name,
+            company: a.profile?.company,
+            jobTitle: a.profile?.jobTitle,
+          })),
+          emailHistory: (brief.emailHistory || []).map(e => ({
+            subject: e.subject,
+            from: e.from,
+            snippet: e.snippet,
+          })),
+          talkingPoints: (brief.talkingPoints || []).map(p => ({
+            category: p.category,
+            point: p.point,
+          })),
+        });
+      }
+
+      sendSuccess(res, { ...brief, aiSummary }, 'Meeting prep generated');
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Event not found') {
+        sendError(res, 'Event not found', 404);
+        return;
+      }
+      logger.error('Failed to generate meeting prep', { error, eventId: req.params.id });
+      sendError(res, 'Failed to generate meeting prep', 500);
+    }
+  }
+);
+
+/**
+ * PATCH /calendar/events/:id/prep/notes
+ * Save user notes for meeting prep
+ */
+router.patch(
+  '/events/:id/prep/notes',
+  validateUUID('id'),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.userId!;
+      const eventId = req.params.id as string;
+      const { notes } = req.body;
+
+      if (typeof notes !== 'string') {
+        sendError(res, 'Notes must be a string', 400);
+        return;
+      }
+
+      const prep = await meetingPrepService.saveMeetingPrep(userId, eventId, {
+        userNotes: notes,
+      });
+
+      sendSuccess(res, prep, 'Notes saved');
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Event not found') {
+        sendError(res, 'Event not found', 404);
+        return;
+      }
+      logger.error('Failed to save meeting prep notes', { error, eventId: req.params.id });
+      sendError(res, 'Failed to save notes', 500);
+    }
+  }
+);
 
 export default router;

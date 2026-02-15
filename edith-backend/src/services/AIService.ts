@@ -194,6 +194,117 @@ Categories:
       return 30;
     }
   }
+  /**
+   * Generate a contextual draft reply to an email
+   */
+  async generateDraftReply(context: {
+    email: { id: string; fromAddress: string; fromName?: string | null; subject: string; bodyText?: string | null; receivedAt: Date };
+    threadEmails: Array<{ fromAddress: string; fromName?: string | null; bodyText?: string | null; receivedAt: Date }>;
+    tone: string;
+  }): Promise<string | null> {
+    if (!this.client) return null;
+
+    const threadContext = context.threadEmails
+      .slice(-5)
+      .map((e, i) => `[${i + 1}] From: ${e.fromName || e.fromAddress}\n${(e.bodyText || '').slice(0, 500)}`)
+      .join('\n---\n');
+
+    const toneInstructions: Record<string, string> = {
+      professional: 'Use polished, professional language. Be clear and respectful.',
+      friendly: 'Use friendly, conversational language. Be warm but professional.',
+      concise: 'Be very brief and to the point. Short sentences, no fluff.',
+      formal: 'Use formal, polished language. Address the recipient with proper titles.',
+      FORMAL: 'Use formal, polished language. Address the recipient with proper titles.',
+      CASUAL: 'Use friendly, conversational language. Be warm but professional.',
+      MIXED: 'Balance professionalism with warmth. Be clear and approachable.',
+    };
+
+    try {
+      const response = await this.client.messages.create({
+        model: config.ai.model || 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: `You are Edith, an AI executive assistant drafting email replies for a busy CEO/entrepreneur.
+
+${toneInstructions[context.tone] || toneInstructions.professional}
+
+Rules:
+- Write ONLY the reply body text (no Subject line, no headers, no "Re:")
+- Match the language of the original email
+- Be concise but address all points raised
+- Include an appropriate greeting and sign-off`,
+        messages: [{
+          role: 'user',
+          content: `Draft a reply to this email:
+
+From: ${context.email.fromName || context.email.fromAddress}
+Subject: ${context.email.subject}
+Body:
+${(context.email.bodyText || '').slice(0, 2000)}
+
+${threadContext ? `Previous messages in thread:\n${threadContext}` : ''}`,
+        }],
+      });
+
+      const text = response.content[0].type === 'text' ? response.content[0].text : '';
+      logger.info('Draft reply generated', { emailId: context.email.id, tone: context.tone });
+      return text;
+    } catch (error) {
+      logger.error('Failed to generate draft reply', { error: (error as Error).message });
+      return null;
+    }
+  }
+
+  /**
+   * Generate an AI-enhanced meeting prep brief
+   */
+  async generateMeetingBrief(input: {
+    eventTitle: string;
+    eventDescription?: string;
+    attendees: Array<{ email: string; name?: string; company?: string; jobTitle?: string }>;
+    emailHistory: Array<{ subject: string; from: string; snippet: string }>;
+    talkingPoints: Array<{ category: string; point: string }>;
+  }): Promise<string | null> {
+    if (!this.client) return null;
+
+    const attendeeList = input.attendees
+      .map(a => `${a.name || a.email}${a.jobTitle ? ` (${a.jobTitle}${a.company ? ` at ${a.company}` : ''})` : ''}`)
+      .join(', ');
+
+    const emailContext = input.emailHistory.slice(0, 5)
+      .map(e => `- "${e.subject}" from ${e.from}: ${e.snippet}`)
+      .join('\n');
+
+    try {
+      const response = await this.client.messages.create({
+        model: config.ai.model || 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: 'You are Edith, an AI executive assistant. Create a concise meeting preparation brief. Write in the language suggested by the context (Dutch or English). Be actionable and strategic.',
+        messages: [{
+          role: 'user',
+          content: `Create a meeting prep brief for:
+
+Meeting: ${input.eventTitle}
+${input.eventDescription ? `Description: ${input.eventDescription}` : ''}
+Attendees: ${attendeeList || 'None listed'}
+
+${emailContext ? `Recent related emails:\n${emailContext}` : ''}
+${input.talkingPoints.length > 0 ? `Suggested talking points:\n${input.talkingPoints.map(p => `- [${p.category}] ${p.point}`).join('\n')}` : ''}
+
+Provide:
+1. A 2-3 sentence executive summary of what this meeting is likely about
+2. Key preparation items (what to review, what to bring)
+3. Strategic notes (relationship context, previous commitments)`,
+        }],
+      });
+
+      const text = response.content[0].type === 'text' ? response.content[0].text : '';
+      logger.info('Meeting brief generated', { eventTitle: input.eventTitle });
+      return text;
+    } catch (error) {
+      logger.error('Failed to generate meeting brief', { error: (error as Error).message });
+      return null;
+    }
+  }
 }
 
 export const aiService = new AIServiceImpl();

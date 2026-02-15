@@ -6,6 +6,7 @@
 import { prisma } from '../../database/client.js';
 import { syncManager, type SyncResult, type SyncError } from '../common/SyncManager.js';
 import { createGmailClientForUser, type GmailMessage } from './GmailClient.js';
+import { emailQueue } from '../../jobs/queue.js';
 import { logger } from '../../utils/logger.js';
 
 // ============================================================================
@@ -105,6 +106,16 @@ class GmailSyncWorkerImpl {
         if (latestMessage.historyId) {
           await syncManager.recordSyncToken(userId, 'GMAIL', latestMessage.historyId);
         }
+      }
+
+      // Trigger immediate categorization for newly synced emails
+      if (itemsSynced > 0) {
+        await emailQueue.add('categorize-after-sync', {
+          targetUserId: userId,
+          maxEmailsPerUser: itemsSynced,
+          triggeredAt: new Date().toISOString(),
+        }, { priority: 1, removeOnComplete: true, removeOnFail: 100 });
+        logger.info('Enqueued categorization after full sync', { userId, count: itemsSynced });
       }
 
       const result: SyncResult = {
@@ -231,6 +242,16 @@ class GmailSyncWorkerImpl {
 
       // Update sync token
       await syncManager.recordSyncToken(userId, 'GMAIL', latestHistoryId);
+
+      // Trigger immediate categorization for newly synced emails
+      if (itemsSynced > 0) {
+        await emailQueue.add('categorize-after-sync', {
+          targetUserId: userId,
+          maxEmailsPerUser: itemsSynced,
+          triggeredAt: new Date().toISOString(),
+        }, { priority: 1, removeOnComplete: true, removeOnFail: 100 });
+        logger.info('Enqueued categorization after incremental sync', { userId, count: itemsSynced });
+      }
 
       const result: SyncResult = {
         success: true,

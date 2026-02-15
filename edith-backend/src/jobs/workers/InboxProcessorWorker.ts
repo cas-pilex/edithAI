@@ -34,7 +34,39 @@ export class InboxProcessorWorker extends BaseWorker<InboxProcessorJobData> {
 
     logger.info('Starting inbox processor', { jobId: job.id, maxEmailsPerUser });
 
-    // Get all users with Gmail integration
+    // Targeted mode: process only a specific user (triggered after sync)
+    if (job.data.targetUserId) {
+      const userId = job.data.targetUserId;
+      logger.info('Targeted inbox processing after sync', { userId, jobId: job.id });
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { preferences: true },
+      });
+
+      if (user) {
+        const result = await this.processUserInbox(
+          userId,
+          null,
+          maxEmailsPerUser,
+          user.preferences?.digestFrequency || 'REALTIME'
+        );
+
+        return {
+          success: true,
+          data: {
+            usersProcessed: 1,
+            totalEmailsProcessed: result.emailsProcessed,
+            urgentAlertsSent: result.urgentAlertsSent,
+            errors: [],
+          },
+        };
+      }
+
+      return { success: true, data: { usersProcessed: 0, totalEmailsProcessed: 0, urgentAlertsSent: 0, errors: [] } };
+    }
+
+    // System-wide mode: process all users with Gmail integration
     const integrations = await prisma.userIntegration.findMany({
       where: {
         provider: 'GMAIL',
