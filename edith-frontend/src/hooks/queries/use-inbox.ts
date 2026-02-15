@@ -31,3 +31,12 @@ export function useEmailStats() {
   });
 }
 
+export function useBriefing() {
+  return useQuery({
+    queryKey: ['emails', 'briefing'],
+    queryFn: () => inboxApi.getBriefing(),
+    staleTime: 5 * 60 * 1000, // Cache for 5 min
+    retry: 1,
+  });
+}
+

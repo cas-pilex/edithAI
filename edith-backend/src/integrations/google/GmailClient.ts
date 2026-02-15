@@ -27,9 +27,11 @@ export interface GmailMessage {
     body?: { data?: string; size: number };
     parts?: Array<{
       mimeType: string;
+      filename?: string;
       body?: { data?: string; size: number };
       parts?: Array<{
         mimeType: string;
+        filename?: string;
         body?: { data?: string; size: number };
       }>;
     }>;
@@ -312,6 +314,7 @@ export class RealGmailClient implements IGmailClientExtended {
           : undefined,
         parts: msg.payload?.parts?.map(p => ({
           mimeType: p.mimeType || '',
+          filename: p.filename || undefined,
           body: p.body
             ? {
                 data: p.body.data || undefined,
@@ -320,6 +323,7 @@ export class RealGmailClient implements IGmailClientExtended {
             : undefined,
           parts: p.parts?.map(pp => ({
             mimeType: pp.mimeType || '',
+            filename: pp.filename || undefined,
             body: pp.body
               ? {
                   data: pp.body.data || undefined,

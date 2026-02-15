@@ -16,6 +16,7 @@ export interface EmailFilters {
   search?: string;
   startDate?: Date;
   endDate?: Date;
+  label?: string; // 'sent' for sent mail, default shows INBOX only
 }
 
 export interface CreateEmailInput {
@@ -46,6 +47,14 @@ class InboxServiceImpl {
     const { limit = 50, offset = 0 } = pagination;
 
     const where: Record<string, unknown> = { userId };
+
+    // Label-based filtering: 'sent' shows sent mail, default shows primary inbox only
+    if (filters.label === 'sent') {
+      where.labels = { has: 'SENT' };
+    } else {
+      // Default: show INBOX emails, exclude pure SENT (no INBOX label)
+      where.labels = { has: 'INBOX' };
+    }
 
     if (filters.category) where.category = filters.category;
     if (filters.isRead !== undefined) where.isRead = filters.isRead;

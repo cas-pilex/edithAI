@@ -1,6 +1,7 @@
 /**
  * MorningBriefingWorker
  * Generates and sends daily morning briefing to users
+ * Uses Claude AI to analyze unread emails and create a structured daily summary
  */
 
 import { Job } from 'bullmq';
@@ -12,6 +13,8 @@ import { taskService } from '../../services/TaskService.js';
 import { inboxService } from '../../services/InboxService.js';
 import { crmService } from '../../services/CRMService.js';
 import { travelService } from '../../services/TravelService.js';
+import { aiService } from '../../services/AIService.js';
+import type { DailyBriefing } from '../../services/AIService.js';
 import { BaseWorker } from './BaseWorker.js';
 import type {
   MorningBriefingJobData,
@@ -56,13 +59,14 @@ export class MorningBriefingWorker extends BaseWorker<MorningBriefingJobData> {
     const startOfDay = this.getStartOfDayInTimezone(userTimezone);
     const endOfDay = this.getEndOfDayInTimezone(userTimezone);
 
-    // Gather all briefing data in parallel
-    const [events, tasks, emailStats, crmReminders, upcomingTrips] = await Promise.all([
+    // Gather all briefing data in parallel (including AI email analysis)
+    const [events, tasks, emailStats, crmReminders, upcomingTrips, aiBriefing] = await Promise.all([
       this.getTodaysEvents(userId, startOfDay, endOfDay, userTimezone),
       this.getTodaysTasks(userId, endOfDay),
       this.getEmailStats(userId),
       this.getCRMReminders(userId),
       this.getUpcomingTrips(userId),
+      this.generateAIBriefing(userId),
     ]);
 
     // Build briefing data
@@ -74,24 +78,39 @@ export class MorningBriefingWorker extends BaseWorker<MorningBriefingJobData> {
       travelReminders: upcomingTrips,
     };
 
-    // Generate briefing message
-    const { title, body } = this.formatBriefing(briefingData, userTimezone);
+    // Generate briefing message (enhanced with AI if available)
+    const { title, body } = this.formatBriefing(briefingData, userTimezone, aiBriefing);
 
-    // Send via NotificationService
+    // Store AI briefing as a notification with structured data
+    const notificationData: Record<string, unknown> = {
+      ...briefingData as unknown as Record<string, unknown>,
+    };
+    if (aiBriefing) {
+      notificationData.aiBriefing = aiBriefing;
+    }
+
     await notificationService.send({
       userId,
       type: 'DAILY_BRIEFING',
       title,
       body,
-      data: briefingData as unknown as Record<string, unknown>,
+      data: notificationData,
       priority: 'NORMAL',
     });
+
+    // Extract tasks from AI briefing and create them
+    let extractedTaskCount = 0;
+    if (aiBriefing?.extractedTasks?.length) {
+      extractedTaskCount = await this.createExtractedTasks(userId, aiBriefing.extractedTasks);
+    }
 
     logger.info('Morning briefing sent', {
       userId,
       eventsCount: events.length,
       tasksCount: tasks.length,
       urgentEmailsCount: emailStats.important,
+      aiBriefing: !!aiBriefing,
+      extractedTasks: extractedTaskCount,
     });
 
     return {
@@ -99,10 +118,96 @@ export class MorningBriefingWorker extends BaseWorker<MorningBriefingJobData> {
       data: {
         eventsCount: events.length,
         tasksCount: tasks.length,
-        urgentEmailsCount: emailStats.important,
+        urgentEmailsCount: aiBriefing?.urgentItems?.length || emailStats.important,
         notificationSent: true,
       },
     };
+  }
+
+  /**
+   * Generate AI-powered email briefing from unread INBOX emails
+   */
+  private async generateAIBriefing(userId: string): Promise<DailyBriefing | null> {
+    if (!aiService.isConfigured) {
+      logger.info('AI service not configured, skipping AI briefing');
+      return null;
+    }
+
+    try {
+      // Fetch unread INBOX emails (not SENT)
+      const unreadEmails = await prisma.email.findMany({
+        where: {
+          userId,
+          isRead: false,
+          isArchived: false,
+          labels: { has: 'INBOX' },
+        },
+        orderBy: { receivedAt: 'desc' },
+        take: 100,
+        select: {
+          id: true,
+          fromAddress: true,
+          fromName: true,
+          subject: true,
+          snippet: true,
+          bodyText: true,
+          receivedAt: true,
+          labels: true,
+        },
+      });
+
+      if (unreadEmails.length === 0) {
+        logger.info('No unread emails for AI briefing', { userId });
+        return null;
+      }
+
+      logger.info('Generating AI briefing', { userId, emailCount: unreadEmails.length });
+
+      const briefing = await aiService.generateDailyBriefing(unreadEmails);
+      return briefing;
+    } catch (error) {
+      logger.error('Failed to generate AI briefing', { userId, error: (error as Error).message });
+      return null;
+    }
+  }
+
+  /**
+   * Create tasks extracted by AI from emails
+   */
+  private async createExtractedTasks(
+    userId: string,
+    tasks: DailyBriefing['extractedTasks']
+  ): Promise<number> {
+    let created = 0;
+
+    for (const task of tasks.slice(0, 10)) {
+      try {
+        await prisma.task.create({
+          data: {
+            userId,
+            title: task.title,
+            priority: task.priority,
+            status: 'TODO',
+            source: 'EMAIL',
+            sourceId: task.emailId,
+            dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
+          },
+        });
+        created++;
+      } catch (error) {
+        logger.error('Failed to create extracted task', {
+          userId,
+          task: task.title,
+          error: (error as Error).message,
+        });
+      }
+    }
+
+    if (created > 0) {
+      logger.info('Created tasks from AI briefing', { userId, count: created });
+    }
+
+    return created;
   }
 
   /**
@@ -265,11 +370,12 @@ export class MorningBriefingWorker extends BaseWorker<MorningBriefingJobData> {
   }
 
   /**
-   * Format briefing into notification message
+   * Format briefing into notification message (enhanced with AI analysis)
    */
   private formatBriefing(
     data: DailyBriefingData,
-    timezone: string
+    timezone: string,
+    aiBriefing?: DailyBriefing | null
   ): { title: string; body: string } {
     const now = this.getUserLocalTime(timezone);
     const hour = now.getHours();
@@ -281,33 +387,59 @@ export class MorningBriefingWorker extends BaseWorker<MorningBriefingJobData> {
 
     const lines: string[] = [];
 
+    // AI Summary (if available)
+    if (aiBriefing?.summary) {
+      lines.push(aiBriefing.summary);
+      lines.push('');
+    }
+
     // Calendar
     if (data.events.length > 0) {
-      lines.push(`\uD83D\uDCC5 ${data.events.length} meeting${data.events.length > 1 ? 's' : ''} today`);
+      lines.push(`${data.events.length} meeting${data.events.length > 1 ? 's' : ''} today`);
       data.events.slice(0, 3).forEach((event) => {
-        lines.push(`  • ${event.time} - ${event.title}`);
+        lines.push(`  - ${event.time} - ${event.title}`);
       });
       if (data.events.length > 3) {
         lines.push(`  ... and ${data.events.length - 3} more`);
       }
     } else {
-      lines.push('\uD83D\uDCC5 No meetings today');
+      lines.push('No meetings today');
+    }
+
+    // AI Urgent items
+    if (aiBriefing?.urgentItems?.length) {
+      lines.push('');
+      lines.push(`${aiBriefing.urgentItems.length} urgent email${aiBriefing.urgentItems.length > 1 ? 's' : ''}:`);
+      aiBriefing.urgentItems.slice(0, 3).forEach((item) => {
+        lines.push(`  - ${item.subject}: ${item.reason}`);
+      });
+    }
+
+    // AI Questions to answer
+    if (aiBriefing?.questionsToAnswer?.length) {
+      lines.push('');
+      lines.push(`${aiBriefing.questionsToAnswer.length} question${aiBriefing.questionsToAnswer.length > 1 ? 's' : ''} to answer:`);
+      aiBriefing.questionsToAnswer.slice(0, 3).forEach((q) => {
+        lines.push(`  - ${q.from}: ${q.question}`);
+      });
     }
 
     // Tasks
     if (data.tasks.length > 0) {
+      lines.push('');
       const urgent = data.tasks.filter((t) => t.priority === 'URGENT' || t.priority === 'HIGH');
-      lines.push(`\u2705 ${data.tasks.length} task${data.tasks.length > 1 ? 's' : ''} due today`);
+      lines.push(`${data.tasks.length} task${data.tasks.length > 1 ? 's' : ''} due today`);
       if (urgent.length > 0) {
-        lines.push(`  ⚠️ ${urgent.length} high priority`);
+        lines.push(`  ${urgent.length} high priority`);
       }
     }
 
-    // Emails
-    if (data.emails.unread > 0) {
-      lines.push(`\uD83D\uDCE7 ${data.emails.unread} unread email${data.emails.unread > 1 ? 's' : ''}`);
+    // Emails (fallback stats if no AI)
+    if (!aiBriefing && data.emails.unread > 0) {
+      lines.push('');
+      lines.push(`${data.emails.unread} unread email${data.emails.unread > 1 ? 's' : ''}`);
       if (data.emails.important > 0) {
-        lines.push(`  \uD83D\uDD25 ${data.emails.important} important`);
+        lines.push(`  ${data.emails.important} important`);
       }
     }
 
@@ -315,14 +447,16 @@ export class MorningBriefingWorker extends BaseWorker<MorningBriefingJobData> {
     if (data.crmReminders && data.crmReminders.length > 0) {
       const birthdays = data.crmReminders.filter((r) => r.type === 'BIRTHDAY');
       if (birthdays.length > 0) {
-        lines.push(`\uD83C\uDF82 Birthday: ${birthdays.map((b) => b.contactName).join(', ')}`);
+        lines.push('');
+        lines.push(`Birthday: ${birthdays.map((b) => b.contactName).join(', ')}`);
       }
     }
 
     // Travel
     if (data.travelReminders && data.travelReminders.length > 0) {
       const trip = data.travelReminders[0];
-      lines.push(`\u2708\uFE0F ${trip.tripName} in ${trip.daysUntil} day${trip.daysUntil > 1 ? 's' : ''}`);
+      lines.push('');
+      lines.push(`${trip.tripName} in ${trip.daysUntil} day${trip.daysUntil > 1 ? 's' : ''}`);
     }
 
     return {

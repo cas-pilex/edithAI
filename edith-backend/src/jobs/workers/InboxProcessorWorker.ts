@@ -8,6 +8,7 @@ import { prisma } from '../../database/client.js';
 import { logger } from '../../utils/logger.js';
 import { notificationService } from '../../services/NotificationService.js';
 import { inboxService } from '../../services/InboxService.js';
+import { aiService } from '../../services/AIService.js';
 import { BaseWorker } from './BaseWorker.js';
 import type {
   InboxProcessorJobData,
@@ -96,6 +97,7 @@ export class InboxProcessorWorker extends BaseWorker<InboxProcessorJobData> {
 
   /**
    * Process inbox for a single user
+   * Uses AI batch categorization when available, falls back to keyword matching
    */
   private async processUserInbox(
     userId: string,
@@ -117,12 +119,68 @@ export class InboxProcessorWorker extends BaseWorker<InboxProcessorJobData> {
       take: maxEmails,
     });
 
+    if (emails.length === 0) return { emailsProcessed: 0, urgentAlertsSent: 0 };
+
+    // Try AI batch categorization first
+    let aiResults: Map<string, { category: EmailCategory; priorityScore: number }> | null = null;
+
+    if (aiService.isConfigured) {
+      try {
+        // Process in batches of 20
+        const allCategorizations: Array<{ emailId: string; category: string; priorityScore: number }> = [];
+
+        for (let i = 0; i < emails.length; i += 20) {
+          const batch = emails.slice(i, i + 20).map(e => ({
+            id: e.id,
+            fromAddress: e.fromAddress,
+            fromName: e.fromName,
+            subject: e.subject,
+            snippet: e.snippet,
+            labels: e.labels,
+          }));
+
+          const results = await aiService.categorizeEmails(batch);
+          allCategorizations.push(...results);
+        }
+
+        // Build lookup map
+        aiResults = new Map();
+        for (const result of allCategorizations) {
+          aiResults.set(result.emailId, {
+            category: result.category as EmailCategory,
+            priorityScore: result.priorityScore,
+          });
+        }
+
+        logger.info('AI batch categorization complete', {
+          userId,
+          emailCount: emails.length,
+          categorized: aiResults.size,
+        });
+      } catch (error) {
+        logger.error('AI categorization failed, falling back to keyword matching', {
+          userId,
+          error: (error as Error).message,
+        });
+        aiResults = null;
+      }
+    }
+
+    // Process each email with AI results or fallback
     for (const email of emails) {
       try {
-        // Simple priority scoring based on email attributes
-        // (In production, this would use InboxAgent for AI analysis)
-        const priorityScore = this.calculatePriorityScore(email);
-        const category = email.category || this.categorizeEmail(email);
+        let category: EmailCategory;
+        let priorityScore: number;
+
+        const aiResult = aiResults?.get(email.id);
+        if (aiResult) {
+          category = aiResult.category;
+          priorityScore = aiResult.priorityScore;
+        } else {
+          // Fallback to keyword matching
+          priorityScore = this.calculatePriorityScore(email) * 10; // Scale 1-10 to 0-100
+          category = email.category || this.categorizeEmail(email);
+        }
 
         // Update email with analysis results
         await prisma.email.update({
@@ -137,8 +195,8 @@ export class InboxProcessorWorker extends BaseWorker<InboxProcessorJobData> {
 
         emailsProcessed++;
 
-        // Send alert for urgent emails if user has REALTIME preference
-        if (priorityScore >= 8 && digestFrequency === 'REALTIME') {
+        // Send alert for urgent/high-priority emails
+        if (priorityScore >= 80 && digestFrequency === 'REALTIME') {
           await notificationService.send({
             userId,
             type: 'EMAIL_ALERT',

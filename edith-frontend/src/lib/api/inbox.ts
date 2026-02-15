@@ -16,6 +16,15 @@ export interface ReplyPayload {
   tone?: string;
 }
 
+export interface DailyBriefing {
+  summary: string;
+  urgentItems: Array<{ emailId: string; subject: string; reason: string }>;
+  questionsToAnswer: Array<{ emailId: string; from: string; subject: string; question: string }>;
+  fyiItems: Array<{ emailId: string; subject: string; oneLiner: string }>;
+  extractedTasks: Array<{ title: string; emailId: string; dueDate?: string; priority: string }>;
+  totalUnread: number;
+}
+
 export const inboxApi = {
   getEmails: async (filters?: EmailFilters, pagination?: PaginationParams) => {
     const { data } = await api.get<PaginatedResponse<Email>>('/api/inbox', {
@@ -71,6 +80,11 @@ export const inboxApi = {
 
   bulkAction: async (ids: string[], action: string) => {
     const { data } = await api.post<ApiResponse<null>>('/api/inbox/bulk', { emailIds: ids, action });
+    return data;
+  },
+
+  getBriefing: async () => {
+    const { data } = await api.get<ApiResponse<DailyBriefing>>('/api/inbox/briefing');
     return data;
   },
 

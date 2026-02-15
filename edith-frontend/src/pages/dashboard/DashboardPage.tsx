@@ -4,6 +4,7 @@ import { useDashboard } from '@/hooks/queries/use-dashboard';
 import { StatsGrid } from './components/StatsGrid';
 import { ActivityFeed } from './components/ActivityFeed';
 import { PriorityInbox } from './components/PriorityInbox';
+import { DailyBriefing } from './components/DailyBriefing';
 import { UpcomingEvents } from './components/UpcomingEvents';
 import { PendingApprovals } from './components/PendingApprovals';
 import { ProductivityChart } from './components/ProductivityChart';
@@ -47,6 +48,7 @@ export function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <motion.div variants={staggerItem} className="space-y-6">
+          <DailyBriefing />
           <ActivityFeed activities={dashboard?.recentActivity} />
           <PriorityInbox emails={dashboard?.priorityEmails} />
         </motion.div>

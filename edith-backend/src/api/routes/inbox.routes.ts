@@ -7,9 +7,11 @@ import { Router } from 'express';
 import type { Router as RouterType, Response } from 'express';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { validateBody, validateUUID } from '../middleware/validation.middleware.js';
+import { prisma } from '../../database/client.js';
 import { inboxService } from '../../services/InboxService.js';
 import { gmailSyncWorker } from '../../integrations/google/GmailSyncWorker.js';
 import { syncManager } from '../../integrations/common/SyncManager.js';
+import { aiService } from '../../services/AIService.js';
 import { sendSuccess, sendPaginated, sendError } from '../../utils/helpers.js';
 import { NotFoundError } from '../../utils/errors.js';
 import {
@@ -51,7 +53,7 @@ router.get(
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const userId = req.userId!;
-      const { page, limit, category, isRead, isStarred, isArchived, fromAddress, search, startDate, endDate } = req.query;
+      const { page, limit, category, isRead, isStarred, isArchived, fromAddress, search, startDate, endDate, label } = req.query;
 
       const pageNum = Number(page) || 1;
       const limitNum = Math.min(Number(limit) || 20, 100);
@@ -67,6 +69,7 @@ router.get(
         search: search as string | undefined,
         startDate: startDate ? new Date(String(startDate)) : undefined,
         endDate: endDate ? new Date(String(endDate)) : undefined,
+        label: label as string | undefined,
       };
 
       const { emails, total } = await inboxService.getEmails(
@@ -96,6 +99,85 @@ router.get('/stats', async (req: AuthenticatedRequest, res: Response) => {
   } catch (error) {
     logger.error('Failed to get inbox stats', { error });
     sendError(res, 'Failed to retrieve inbox statistics', 500);
+  }
+});
+
+/**
+ * GET /inbox/briefing
+ * Get or generate daily AI briefing from unread emails
+ */
+router.get('/briefing', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+
+    if (!aiService.isConfigured) {
+      sendError(res, 'AI service not configured', 503);
+      return;
+    }
+
+    // Check if we already have a briefing from today (stored as notification)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const existingBriefing = await prisma.notification.findFirst({
+      where: {
+        userId,
+        type: 'DAILY_BRIEFING',
+        createdAt: { gte: today },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (existingBriefing?.data && (existingBriefing.data as Record<string, unknown>).aiBriefing) {
+      sendSuccess(res, (existingBriefing.data as Record<string, unknown>).aiBriefing);
+      return;
+    }
+
+    // Generate on-demand: fetch unread INBOX emails
+    const unreadEmails = await prisma.email.findMany({
+      where: {
+        userId,
+        isRead: false,
+        isArchived: false,
+        labels: { has: 'INBOX' },
+      },
+      orderBy: { receivedAt: 'desc' },
+      take: 100,
+      select: {
+        id: true,
+        fromAddress: true,
+        fromName: true,
+        subject: true,
+        snippet: true,
+        bodyText: true,
+        receivedAt: true,
+        labels: true,
+      },
+    });
+
+    if (unreadEmails.length === 0) {
+      sendSuccess(res, {
+        summary: 'No unread emails in your inbox.',
+        urgentItems: [],
+        questionsToAnswer: [],
+        fyiItems: [],
+        extractedTasks: [],
+        totalUnread: 0,
+      });
+      return;
+    }
+
+    const briefing = await aiService.generateDailyBriefing(unreadEmails);
+
+    if (!briefing) {
+      sendError(res, 'Failed to generate briefing', 500);
+      return;
+    }
+
+    sendSuccess(res, briefing);
+  } catch (error) {
+    logger.error('Failed to get briefing', { error });
+    sendError(res, 'Failed to generate briefing', 500);
   }
 });
 

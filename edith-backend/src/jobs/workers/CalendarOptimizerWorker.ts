@@ -8,6 +8,7 @@ import { prisma } from '../../database/client.js';
 import { logger } from '../../utils/logger.js';
 import { notificationService } from '../../services/NotificationService.js';
 import { approvalService } from '../../services/ApprovalService.js';
+import { aiService } from '../../services/AIService.js';
 import { BaseWorker } from './BaseWorker.js';
 import type {
   CalendarOptimizerJobData,
@@ -89,8 +90,8 @@ export class CalendarOptimizerWorker extends BaseWorker<CalendarOptimizerJobData
     // Check for missing focus time
     optimizations.push(...this.checkFocusTime(typedEvents, startOfDay, endOfDay));
 
-    // Check for travel time issues
-    optimizations.push(...this.checkTravelTime(typedEvents));
+    // Check for travel time issues (async — uses AI estimation)
+    optimizations.push(...await this.checkTravelTime(typedEvents));
 
     // Check for meeting consolidation opportunities
     optimizations.push(...this.checkConsolidationOpportunities(typedEvents));
@@ -231,8 +232,9 @@ export class CalendarOptimizerWorker extends BaseWorker<CalendarOptimizerJobData
 
   /**
    * Check for travel time issues between in-person meetings
+   * Uses AI to estimate realistic travel times from Volendam
    */
-  private checkTravelTime(
+  private async checkTravelTime(
     events: Array<{
       id: string;
       title: string;
@@ -241,33 +243,80 @@ export class CalendarOptimizerWorker extends BaseWorker<CalendarOptimizerJobData
       location: string | null;
       isOnline: boolean;
     }>
-  ): CalendarOptimization[] {
+  ): Promise<CalendarOptimization[]> {
     const optimizations: CalendarOptimization[] = [];
 
     // Only check in-person meetings with locations
     const inPersonEvents = events.filter((e) => !e.isOnline && e.location);
 
-    for (let i = 0; i < inPersonEvents.length - 1; i++) {
+    for (let i = 0; i < inPersonEvents.length; i++) {
       const current = inPersonEvents[i];
-      const next = inPersonEvents[i + 1];
 
-      // Check if locations are different
-      if (current.location !== next.location) {
-        const gapMinutes =
-          (next.startTime.getTime() - current.endTime.getTime()) / (1000 * 60);
+      // For the first event: check travel time from home (Volendam)
+      if (i === 0) {
+        const travelMinutes = await aiService.estimateTravelTime('Volendam', current.location!);
+        const meetingStart = current.startTime;
+        const latestDeparture = new Date(meetingStart.getTime() - travelMinutes * 60 * 1000);
 
-        // Assume 30 minutes travel time between different locations
-        const estimatedTravelTime = 30;
+        // Update the event with travel time
+        await prisma.calendarEvent.update({
+          where: { id: current.id },
+          data: {
+            travelTimeMinutes: travelMinutes,
+            suggestedPrepTime: travelMinutes + 15, // travel + 15min buffer
+          },
+        }).catch(() => { /* ignore if fields don't exist */ });
 
-        if (gapMinutes < estimatedTravelTime) {
+        // Warn if departure would be before 7:00
+        const departureHour = latestDeparture.getHours();
+        if (departureHour < 7) {
           optimizations.push({
             type: 'travel_time',
             severity: 'high',
-            title: 'Insufficient travel time',
-            description: `Only ${Math.round(gapMinutes)} minutes between "${current.title}" at ${current.location} and "${next.title}" at ${next.location}.`,
-            affectedEvents: [current.id, next.id],
-            suggestedAction: `Consider moving "${next.title}" to allow for travel`,
+            title: 'Early departure required',
+            description: `"${current.title}" at ${current.location} requires leaving Volendam by ${latestDeparture.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })} (~${travelMinutes} min travel).`,
+            affectedEvents: [current.id],
+            suggestedAction: `Consider rescheduling "${current.title}" to a later time`,
           });
+        }
+      }
+
+      // Check travel time between consecutive in-person events
+      if (i < inPersonEvents.length - 1) {
+        const next = inPersonEvents[i + 1];
+
+        if (current.location !== next.location) {
+          const gapMinutes =
+            (next.startTime.getTime() - current.endTime.getTime()) / (1000 * 60);
+
+          // Use AI to estimate travel time between locations
+          const estimatedTravelTime = await aiService.estimateTravelTime(
+            current.location!,
+            next.location!
+          );
+
+          // Add buffer: 15min standard, 30min for meetings with many attendees
+          const buffer = 15;
+          const totalNeeded = estimatedTravelTime + buffer;
+
+          if (gapMinutes < totalNeeded) {
+            optimizations.push({
+              type: 'travel_time',
+              severity: gapMinutes < estimatedTravelTime ? 'high' : 'medium',
+              title: 'Insufficient travel time',
+              description: `Only ${Math.round(gapMinutes)} min between "${current.title}" at ${current.location} and "${next.title}" at ${next.location}. Estimated travel: ${estimatedTravelTime} min + ${buffer} min buffer.`,
+              affectedEvents: [current.id, next.id],
+              suggestedAction: `Need at least ${totalNeeded} min gap. Consider moving "${next.title}"`,
+            });
+          }
+
+          // Update next event with travel time
+          await prisma.calendarEvent.update({
+            where: { id: next.id },
+            data: {
+              travelTimeMinutes: estimatedTravelTime,
+            },
+          }).catch(() => { /* ignore if fields don't exist */ });
         }
       }
     }
