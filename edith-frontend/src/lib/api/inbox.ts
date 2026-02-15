@@ -16,6 +16,20 @@ export interface ReplyPayload {
   tone?: string;
 }
 
+export interface SendReplyPayload {
+  body: string;
+  isHtml?: boolean;
+}
+
+export interface SendEmailPayload {
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  body: string;
+  isHtml?: boolean;
+}
+
 export interface DailyBriefing {
   summary: string;
   urgentItems: Array<{ emailId: string; subject: string; reason: string }>;
@@ -85,6 +99,16 @@ export const inboxApi = {
 
   getBriefing: async () => {
     const { data } = await api.get<ApiResponse<DailyBriefing>>('/api/inbox/briefing');
+    return data;
+  },
+
+  sendReply: async (id: string, payload: SendReplyPayload) => {
+    const { data } = await api.post<ApiResponse<{ sent: boolean; messageId: string }>>(`/api/inbox/${id}/reply`, payload);
+    return data;
+  },
+
+  sendEmail: async (payload: SendEmailPayload) => {
+    const { data } = await api.post<ApiResponse<{ sent: boolean; messageId: string }>>('/api/inbox/send', payload);
     return data;
   },
 

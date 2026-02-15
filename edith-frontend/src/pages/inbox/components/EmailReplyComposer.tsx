@@ -3,7 +3,7 @@ import { Send, Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useDraftReply } from '@/hooks/mutations/use-inbox-mutations';
+import { useDraftReply, useSendReply } from '@/hooks/mutations/use-inbox-mutations';
 
 interface EmailReplyComposerProps {
   emailId: string;
@@ -14,11 +14,20 @@ export function EmailReplyComposer({ emailId, onClose }: EmailReplyComposerProps
   const [body, setBody] = useState('');
   const [tone, setTone] = useState('professional');
   const draftMutation = useDraftReply();
+  const sendMutation = useSendReply();
 
   const handleAiDraft = () => {
     draftMutation.mutate(
       { id: emailId, payload: { body, tone } },
       { onSuccess: (data) => setBody(data.data.draft) }
+    );
+  };
+
+  const handleSend = () => {
+    if (!body.trim()) return;
+    sendMutation.mutate(
+      { id: emailId, payload: { body } },
+      { onSuccess: () => onClose() }
     );
   };
 
@@ -48,8 +57,8 @@ export function EmailReplyComposer({ emailId, onClose }: EmailReplyComposerProps
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" className="gap-1">
-            <Send className="h-3 w-3" /> Send
+          <Button size="sm" className="gap-1" onClick={handleSend} disabled={!body.trim() || sendMutation.isPending}>
+            <Send className="h-3 w-3" /> {sendMutation.isPending ? 'Sending...' : 'Send'}
           </Button>
         </div>
       </div>

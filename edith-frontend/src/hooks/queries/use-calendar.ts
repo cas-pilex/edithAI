@@ -37,3 +37,11 @@ export function useAvailability(date: string) {
     enabled: !!date,
   });
 }
+
+export function useEventPrep(eventId: string | null) {
+  return useQuery({
+    queryKey: ['calendar', 'prep', eventId],
+    queryFn: () => calendarApi.getEventPrep(eventId!),
+    enabled: !!eventId,
+  });
+}

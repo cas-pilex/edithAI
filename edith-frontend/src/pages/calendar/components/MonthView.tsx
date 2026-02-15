@@ -5,9 +5,10 @@ import type { CalendarEvent } from '@/types';
 interface MonthViewProps {
   events: CalendarEvent[];
   currentDate: Date;
+  onEventClick?: (eventId: string) => void;
 }
 
-export function MonthView({ events, currentDate }: MonthViewProps) {
+export function MonthView({ events, currentDate, onEventClick }: MonthViewProps) {
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
   const calStart = startOfWeek(monthStart, { weekStartsOn: 1 });
@@ -52,7 +53,8 @@ export function MonthView({ events, currentDate }: MonthViewProps) {
                 {dayEvents.slice(0, 3).map((event) => (
                   <div
                     key={event.id}
-                    className="truncate rounded bg-primary/10 px-1 py-0.5 text-[10px] text-primary"
+                    className="cursor-pointer truncate rounded bg-primary/10 px-1 py-0.5 text-[10px] text-primary hover:bg-primary/20"
+                    onClick={() => onEventClick?.(event.id)}
                   >
                     {event.title}
                   </div>

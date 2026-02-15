@@ -23,6 +23,59 @@ export interface CreateEventPayload {
 
 export interface UpdateEventPayload extends Partial<CreateEventPayload> {}
 
+export interface MeetingPrep {
+  id: string;
+  eventId: string;
+  researchNotes?: string;
+  attendeeProfiles?: unknown;
+  suggestedTalkingPoints: string[];
+  relevantEmails: string[];
+  userNotes?: string;
+  generatedAt?: string;
+}
+
+export interface MeetingBriefData {
+  event: {
+    id: string;
+    title: string;
+    description?: string;
+    startTime: string;
+    endTime: string;
+    location?: string;
+    isOnline: boolean;
+    meetingUrl?: string;
+  };
+  attendees: Array<{
+    email: string;
+    name?: string;
+    status?: string;
+    profile?: {
+      company?: string;
+      jobTitle?: string;
+      importanceScore?: number;
+    };
+  }>;
+  emailHistory?: Array<{
+    id: string;
+    subject: string;
+    from: string;
+    date: string;
+    snippet: string;
+  }>;
+  talkingPoints?: Array<{
+    category: string;
+    point: string;
+    priority: string;
+  }>;
+  relatedTasks?: Array<{
+    id: string;
+    title: string;
+    status: string;
+    dueDate?: string;
+  }>;
+  aiSummary?: string;
+}
+
 export const calendarApi = {
   getEvents: async (filters?: CalendarFilters, pagination?: PaginationParams) => {
     const { data } = await api.get<PaginatedResponse<CalendarEvent>>('/api/calendar/events', {
@@ -68,6 +121,21 @@ export const calendarApi = {
 
   rsvp: async (id: string, status: string) => {
     const { data } = await api.post<ApiResponse<CalendarEvent>>(`/api/calendar/events/${id}/rsvp`, { status });
+    return data;
+  },
+
+  getEventPrep: async (eventId: string) => {
+    const { data } = await api.get<ApiResponse<MeetingPrep | null>>(`/api/calendar/events/${eventId}/prep`);
+    return data;
+  },
+
+  generateEventPrep: async (eventId: string) => {
+    const { data } = await api.post<ApiResponse<MeetingBriefData>>(`/api/calendar/events/${eventId}/prep/generate`);
+    return data;
+  },
+
+  saveEventPrepNotes: async (eventId: string, notes: string) => {
+    const { data } = await api.patch<ApiResponse<MeetingPrep>>(`/api/calendar/events/${eventId}/prep/notes`, { notes });
     return data;
   },
 

@@ -8,9 +8,10 @@ const HOURS = Array.from({ length: 24 }, (_, i) => i);
 interface WeekViewProps {
   events: CalendarEvent[];
   currentDate: Date;
+  onEventClick?: (eventId: string) => void;
 }
 
-export function WeekView({ events, currentDate }: WeekViewProps) {
+export function WeekView({ events, currentDate, onEventClick }: WeekViewProps) {
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
@@ -47,7 +48,7 @@ export function WeekView({ events, currentDate }: WeekViewProps) {
                 return (
                   <div key={`${day.toISOString()}-${hour}`} className="relative h-12 border-b border-l border-border">
                     {dayEvents.map((event) => (
-                      <EventBlock key={event.id} event={event} />
+                      <EventBlock key={event.id} event={event} onClick={onEventClick} />
                     ))}
                   </div>
                 );

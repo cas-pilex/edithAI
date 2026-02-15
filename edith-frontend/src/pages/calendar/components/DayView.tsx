@@ -8,9 +8,10 @@ const HOURS = Array.from({ length: 24 }, (_, i) => i);
 interface DayViewProps {
   events: CalendarEvent[];
   currentDate: Date;
+  onEventClick?: (eventId: string) => void;
 }
 
-export function DayView({ events, currentDate }: DayViewProps) {
+export function DayView({ events, currentDate, onEventClick }: DayViewProps) {
   return (
     <ScrollArea className="h-full">
       <div>
@@ -26,7 +27,7 @@ export function DayView({ events, currentDate }: DayViewProps) {
               </div>
               <div className="relative min-h-[3rem] flex-1 border-l border-border p-1">
                 {hourEvents.map((event) => (
-                  <EventBlock key={event.id} event={event} />
+                  <EventBlock key={event.id} event={event} onClick={onEventClick} />
                 ))}
               </div>
             </div>

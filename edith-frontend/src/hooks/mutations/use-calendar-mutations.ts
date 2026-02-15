@@ -49,3 +49,27 @@ export function useRsvp() {
     },
   });
 }
+
+export function useGenerateEventPrep() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (eventId: string) => calendarApi.generateEventPrep(eventId),
+    onSuccess: (_, eventId) => {
+      queryClient.invalidateQueries({ queryKey: ['calendar', 'prep', eventId] });
+      toast.success('Meeting prep generated');
+    },
+    onError: () => toast.error('Failed to generate meeting prep'),
+  });
+}
+
+export function useSaveEventPrepNotes() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eventId, notes }: { eventId: string; notes: string }) => calendarApi.saveEventPrepNotes(eventId, notes),
+    onSuccess: (_, { eventId }) => {
+      queryClient.invalidateQueries({ queryKey: ['calendar', 'prep', eventId] });
+      toast.success('Notes saved');
+    },
+    onError: () => toast.error('Failed to save notes'),
+  });
+}

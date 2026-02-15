@@ -11,6 +11,7 @@ import { WeekView } from './components/WeekView';
 import { DayView } from './components/DayView';
 import { MonthView } from './components/MonthView';
 import { EventCreateDialog } from './components/EventCreateDialog';
+import { EventDetailDialog } from './components/EventDetailDialog';
 import { CalendarSidebar } from './components/CalendarSidebar';
 
 type ViewType = 'week' | 'day' | 'month';
@@ -19,6 +20,7 @@ export function CalendarPage() {
   const [view, setView] = useState<ViewType>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [createOpen, setCreateOpen] = useState(false);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
   const dateRange = useMemo(() => {
     if (view === 'week') {
@@ -70,13 +72,18 @@ export function CalendarPage() {
           </div>
         </div>
         <div className="flex-1 overflow-hidden rounded-lg border border-border">
-          {view === 'week' && <WeekView events={events} currentDate={currentDate} />}
-          {view === 'day' && <DayView events={events} currentDate={currentDate} />}
-          {view === 'month' && <MonthView events={events} currentDate={currentDate} />}
+          {view === 'week' && <WeekView events={events} currentDate={currentDate} onEventClick={setSelectedEventId} />}
+          {view === 'day' && <DayView events={events} currentDate={currentDate} onEventClick={setSelectedEventId} />}
+          {view === 'month' && <MonthView events={events} currentDate={currentDate} onEventClick={setSelectedEventId} />}
         </div>
       </div>
       <CalendarSidebar currentDate={currentDate} onDateChange={setCurrentDate} />
       <EventCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <EventDetailDialog
+        eventId={selectedEventId}
+        open={!!selectedEventId}
+        onOpenChange={(open) => { if (!open) setSelectedEventId(null); }}
+      />
     </motion.div>
   );
 }
