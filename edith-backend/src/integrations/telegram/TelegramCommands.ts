@@ -375,8 +375,11 @@ class TelegramCommandsImpl {
     // Send thinking indicator
     await ctx.reply('⏳ Even denken...');
 
+    const startTime = Date.now();
+
     try {
       const { orchestratorAgent } = await import('../../agents/OrchestratorAgent.js');
+      const { auditService } = await import('../../services/AuditService.js');
 
       const context = {
         userId,
@@ -400,6 +403,18 @@ class TelegramCommandsImpl {
         where: { id: interaction.id },
         data: { status: 'COMPLETED', response: { text: response } },
       });
+
+      // Log to ActionLog for Activity Log UI
+      await auditService.logAgentAction(
+        userId,
+        'TelegramBot',
+        'TELEGRAM_MESSAGE',
+        { text: text.substring(0, 200), telegramId: ctx.from!.id },
+        { response: response.substring(0, 500) },
+        'SUCCESS',
+        undefined,
+        Date.now() - startTime,
+      );
     } catch (error) {
       logger.error('Failed to process message via orchestrator', { userId, error });
 
@@ -407,6 +422,19 @@ class TelegramCommandsImpl {
         where: { id: interaction.id },
         data: { status: 'FAILED' },
       });
+
+      // Log failure to ActionLog
+      const { auditService } = await import('../../services/AuditService.js');
+      await auditService.logAgentAction(
+        userId,
+        'TelegramBot',
+        'TELEGRAM_MESSAGE',
+        { text: text.substring(0, 200), telegramId: ctx.from!.id },
+        { error: (error as Error).message },
+        'FAILURE',
+        undefined,
+        Date.now() - startTime,
+      ).catch(() => {});
 
       await ctx.reply('Sorry, I couldn\'t process your request. Please try again.');
     }

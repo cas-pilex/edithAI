@@ -194,7 +194,7 @@ export abstract class BaseWorker<T extends BaseJobData> {
   ): Promise<void> {
     const duration = Date.now() - context.startTime.getTime();
 
-    // Log to audit
+    // Log to audit trail
     await auditService.log(
       {
         action: `JOB_${this.jobType}_${success ? 'SUCCESS' : 'FAILURE'}`,
@@ -211,6 +211,27 @@ export abstract class BaseWorker<T extends BaseJobData> {
       },
       { userId: context.userId !== 'system' ? context.userId : undefined }
     );
+
+    // Log to activity log (ActionLog) so it shows in the Activity Log UI
+    if (context.userId !== 'system') {
+      try {
+        await auditService.logAgentAction(
+          context.userId,
+          `${this.jobType}Worker`,
+          `JOB_${this.jobType}`,
+          { jobId: job.id, ...(job.data as Record<string, unknown>) },
+          success ? (result as unknown as Record<string, unknown>) : { error: error?.message },
+          success ? 'SUCCESS' : 'FAILURE',
+          undefined,
+          duration,
+        );
+      } catch (logError) {
+        logger.error('Failed to log worker action to ActionLog', {
+          jobId: job.id,
+          error: (logError as Error).message,
+        });
+      }
+    }
 
     // Update scheduled job status
     if (job.data.scheduledJobId) {

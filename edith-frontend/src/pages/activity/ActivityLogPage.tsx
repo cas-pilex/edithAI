@@ -12,7 +12,7 @@ import { useActivityLog, useActivityStats } from '@/hooks/queries/use-activity';
 import type { ActivityLogEntry } from '@/lib/api/activity';
 
 const AGENT_TYPES = [
-  { value: '', label: 'All Agents' },
+  { value: 'all', label: 'All Agents' },
   { value: 'OrchestratorAgent', label: 'Orchestrator' },
   { value: 'InboxAgent', label: 'Inbox' },
   { value: 'CalendarAgent', label: 'Calendar' },
@@ -20,10 +20,19 @@ const AGENT_TYPES = [
   { value: 'CRMAgent', label: 'CRM' },
   { value: 'TravelAgent', label: 'Travel' },
   { value: 'MeetingPrepAgent', label: 'Meeting Prep' },
+  { value: 'TelegramBot', label: 'Telegram' },
+  { value: 'INBOX_PROCESSORWorker', label: 'Email Processor' },
+  { value: 'CALENDAR_OPTIMIZERWorker', label: 'Calendar Optimizer' },
+  { value: 'MEETING_PREPWorker', label: 'Meeting Prep Job' },
+  { value: 'EMAIL_DIGESTWorker', label: 'Email Digest' },
+  { value: 'MORNING_BRIEFINGWorker', label: 'Morning Briefing' },
+  { value: 'FOLLOW_UP_REMINDERWorker', label: 'Follow-up Reminder' },
+  { value: 'WEEKLY_REPORTWorker', label: 'Weekly Report' },
+  { value: 'SECURITY_AUDITWorker', label: 'Security Audit' },
 ];
 
 const STATUS_OPTIONS = [
-  { value: '', label: 'All Statuses' },
+  { value: 'all', label: 'All Statuses' },
   { value: 'SUCCESS', label: 'Success' },
   { value: 'FAILURE', label: 'Failure' },
 ];
@@ -40,7 +49,15 @@ function formatTimestamp(iso: string): string {
 }
 
 function agentLabel(agentType: string): string {
-  return agentType.replace(/Agent$/, '');
+  // Map worker names like "INBOX_PROCESSORWorker" to readable labels
+  const match = AGENT_TYPES.find((t) => t.value === agentType);
+  if (match) return match.label;
+  // Fallback: strip Agent/Worker suffix and format
+  return agentType
+    .replace(/Worker$/, '')
+    .replace(/Agent$/, '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function ActionRow({ entry }: { entry: ActivityLogEntry }) {
@@ -85,12 +102,12 @@ function ActionRow({ entry }: { entry: ActivityLogEntry }) {
 
 export function ActivityLogPage() {
   const [page, setPage] = useState(1);
-  const [agentType, setAgentType] = useState('');
-  const [status, setStatus] = useState('');
+  const [agentType, setAgentType] = useState('all');
+  const [status, setStatus] = useState('all');
 
   const filters = {
-    agentType: agentType || undefined,
-    status: status || undefined,
+    agentType: agentType !== 'all' ? agentType : undefined,
+    status: status !== 'all' ? status : undefined,
   };
 
   const { data: logData, isLoading: logLoading } = useActivityLog(filters, { page, limit: 20 });
