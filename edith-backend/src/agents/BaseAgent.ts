@@ -878,12 +878,21 @@ export abstract class BaseAgent {
   protected buildSystemPrompt(context: AIAgentContext): string {
     let prompt = this.systemPrompt;
 
+    // Inject current date/time and timezone
+    const tz = context.timezone || 'Europe/Amsterdam';
+    const now = new Date();
+    const localTime = now.toLocaleString('en-US', { timeZone: tz, dateStyle: 'full', timeStyle: 'short' });
+    prompt += `\n\n## Current Date & Time
+- Today: ${localTime}
+- User timezone: ${tz}
+IMPORTANT: Use timezone ${tz} for all date/time operations. Respond in the user's language.`;
+
     if (context.userPreferences) {
-      prompt += `\n\nUser Preferences:
+      prompt += `\n\n## User Preferences
 - Communication tone: ${context.userPreferences.communicationTone}
 - Response length preference: ${context.userPreferences.responseLength}
 - Language: ${context.userPreferences.language}
-- Timezone: User is in ${context.userPreferences.workingHoursStart} - ${context.userPreferences.workingHoursEnd} working hours`;
+- Working hours: ${context.userPreferences.workingHoursStart} - ${context.userPreferences.workingHoursEnd}`;
     }
 
     return prompt;
@@ -920,12 +929,17 @@ export abstract class BaseAgent {
       }
     }
 
-    // Add current context
+    // Add current context with timezone-aware time
+    const tz = context.timezone || 'Europe/Amsterdam';
+    const now = new Date();
+    const localTime = now.toLocaleString('en-US', { timeZone: tz, dateStyle: 'full', timeStyle: 'short' });
     prompt += `\n\n## Current Context
 - Session ID: ${context.sessionId}
 - Request ID: ${context.requestId}
 - Domain: ${context.domain}
-- Timestamp: ${new Date().toISOString()}`;
+- Today: ${localTime}
+- User timezone: ${tz}
+IMPORTANT: Use timezone ${tz} for all date/time operations. Respond in the user's language.`;
 
     return prompt;
   }

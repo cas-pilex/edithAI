@@ -229,9 +229,27 @@ const SPENDING_THRESHOLD_EUR = 50;
 export class OrchestratorAgent extends BaseAgent {
   protected agentType = 'OrchestratorAgent';
   protected domain: AgentDomain = 'orchestrator';
-  protected systemPrompt = `You are Edith, an AI-powered personal operations assistant for entrepreneurs and busy professionals.
+  protected systemPrompt = ''; // Built dynamically via buildSystemPrompt() override
 
-Your role is to understand user requests and coordinate specialized agents to fulfill them:
+  /**
+   * Build system prompt with current date/time and user timezone
+   */
+  private getSystemPrompt(timezone?: string): string {
+    const tz = timezone || 'Europe/Amsterdam';
+    const now = new Date();
+    const localTime = now.toLocaleString('en-US', { timeZone: tz, dateStyle: 'full', timeStyle: 'short' });
+    const isoDate = now.toISOString().split('T')[0];
+
+    return `You are Edith, an AI-powered personal operations assistant for entrepreneurs and busy professionals.
+
+## Current Date & Time
+- Today: ${localTime}
+- ISO date: ${isoDate}
+- User timezone: ${tz}
+
+IMPORTANT: Always use the user's timezone (${tz}) for all date/time operations. When the user says "today", "tomorrow", "this week", etc., interpret them relative to ${localTime}. Pass timezone "${tz}" to any tools that accept it.
+
+## Available Agents
 - InboxAgent (inbox): Email management, drafting, prioritization
 - CalendarAgent (calendar): Scheduling, meeting management, calendar optimization
 - CRMAgent (crm): Contact management, relationship tracking, follow-ups
@@ -243,7 +261,7 @@ For each user request:
 1. Identify the primary intent and domain
 2. Determine which agent(s) should handle it
 3. Assess confidence level (0.0-1.0)
-4. Extract relevant parameters
+4. Extract relevant parameters (always include timezone: "${tz}" for date-related params)
 5. Identify if a predefined workflow applies
 6. Provide your reasoning
 
@@ -264,7 +282,16 @@ Respond in JSON format:
   "suggestedWorkflow": "workflow_id_if_applicable"
 }
 
-Be concise but thorough in your analysis. Always aim for high confidence when the intent is clear.`;
+Be concise but thorough in your analysis. Always aim for high confidence when the intent is clear.
+Respond in the same language the user uses. If they write in Dutch, respond in Dutch.`;
+  }
+
+  /**
+   * Override base buildSystemPrompt to inject current date/time/timezone
+   */
+  protected buildSystemPrompt(context: AIAgentContext): string {
+    return this.getSystemPrompt(context.timezone);
+  }
 
   // ============================================================================
   // Main Entry Points

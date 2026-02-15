@@ -381,12 +381,18 @@ class TelegramCommandsImpl {
       const { orchestratorAgent } = await import('../../agents/OrchestratorAgent.js');
       const { auditService } = await import('../../services/AuditService.js');
 
+      // Load user data for proper context (timezone, email, preferences)
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true, name: true, timezone: true, preferences: true },
+      });
+
       const context = {
         userId,
-        userEmail: undefined,
-        userName: ctx.from?.first_name,
-        timezone: undefined,
-        preferences: {},
+        userEmail: user?.email,
+        userName: user?.name || ctx.from?.first_name,
+        timezone: user?.timezone || 'Europe/Amsterdam',
+        preferences: (user?.preferences || {}) as Record<string, unknown>,
       };
 
       const result = await orchestratorAgent.process(context, text, sessionId);
@@ -639,16 +645,28 @@ class TelegramCommandsImpl {
   // Data Fetching — wired to real services
   // ============================================================================
 
+  /**
+   * Get the user's timezone from DB, defaulting to Europe/Amsterdam
+   */
+  private async getUserTimezone(userId: string): Promise<string> {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { timezone: true },
+    });
+    return user?.timezone || 'Europe/Amsterdam';
+  }
+
   private async getTodayEvents(userId: string): Promise<Array<{
     time: string;
     title: string;
     location?: string;
     meetingUrl?: string;
   }>> {
+    const tz = await this.getUserTimezone(userId);
     const { calendarService } = await import('../../services/CalendarService.js');
     const events = await calendarService.getDayEvents(userId, new Date());
     return events.map((e) => ({
-      time: new Date(e.startTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      time: new Date(e.startTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz }),
       title: e.title,
       location: e.location ?? undefined,
       meetingUrl: e.meetingUrl ?? undefined,
@@ -660,7 +678,10 @@ class TelegramCommandsImpl {
     priority: string;
     dueDate?: string;
   }>> {
-    const endOfDay = new Date();
+    const tz = await this.getUserTimezone(userId);
+    // Calculate end of day in user's timezone
+    const nowInTz = new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
+    const endOfDay = new Date(nowInTz);
     endOfDay.setHours(23, 59, 59, 999);
 
     const tasks = await prisma.task.findMany({
@@ -676,7 +697,7 @@ class TelegramCommandsImpl {
     return tasks.map((t) => ({
       title: t.title,
       priority: t.priority,
-      dueDate: t.dueDate ? new Date(t.dueDate).toLocaleDateString() : undefined,
+      dueDate: t.dueDate ? new Date(t.dueDate).toLocaleDateString('nl-NL', { timeZone: tz }) : undefined,
     }));
   }
 
