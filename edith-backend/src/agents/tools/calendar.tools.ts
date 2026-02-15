@@ -141,6 +141,9 @@ async function handleScheduleMeeting(
   }
 
   try {
+    const tz = context.timezone || 'Europe/Amsterdam';
+
+    // Save locally first
     const event = await prisma.calendarEvent.create({
       data: {
         userId: context.userId,
@@ -149,7 +152,7 @@ async function handleScheduleMeeting(
         description,
         startTime: new Date(startTime),
         endTime: new Date(endTime),
-        timezone: context.timezone || 'Europe/Amsterdam',
+        timezone: tz,
         location,
         meetingUrl,
         isOnline: !!meetingUrl,
@@ -157,6 +160,29 @@ async function handleScheduleMeeting(
         status: 'CONFIRMED',
       },
     });
+
+    // Push to Google Calendar if user has OAuth connected
+    try {
+      const { createCalendarClientForUser } = await import('../../integrations/google/CalendarClient.js');
+      const gcal = await createCalendarClientForUser(context.userId);
+      if (gcal) {
+        const gcalEvent = await gcal.createEvent({
+          summary: title,
+          description,
+          location,
+          start: { dateTime: new Date(startTime).toISOString(), timeZone: tz },
+          end: { dateTime: new Date(endTime).toISOString(), timeZone: tz },
+          attendees: attendees?.map((e) => ({ email: e })),
+        });
+        // Update local event with Google Calendar ID for future sync
+        await prisma.calendarEvent.update({
+          where: { id: event.id },
+          data: { externalId: gcalEvent.id },
+        });
+      }
+    } catch (syncError) {
+      logger.warn('Failed to sync event to Google Calendar (saved locally)', { error: syncError });
+    }
 
     // Add buffer time if requested
     if (addBuffer) {

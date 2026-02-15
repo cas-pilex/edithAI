@@ -212,6 +212,7 @@ async function handleArchiveEmails(
   const { emailIds } = input as { emailIds: string[] };
 
   try {
+    // Archive locally in DB
     const result = await prisma.email.updateMany({
       where: {
         id: { in: emailIds },
@@ -219,6 +220,25 @@ async function handleArchiveEmails(
       },
       data: { isArchived: true },
     });
+
+    // Also archive in Gmail if connected
+    try {
+      const { createGmailClientForUser } = await import('../../integrations/google/GmailClient.js');
+      const gmail = await createGmailClientForUser(context.userId);
+      if (gmail) {
+        // Get external IDs for Gmail API
+        const emails = await prisma.email.findMany({
+          where: { id: { in: emailIds }, userId: context.userId },
+          select: { externalId: true },
+        });
+        const gmailIds = emails.map((e) => e.externalId).filter(Boolean);
+        if (gmailIds.length > 0) {
+          await gmail.archiveMessages(gmailIds);
+        }
+      }
+    } catch (syncError) {
+      logger.warn('Failed to archive in Gmail (archived locally)', { error: syncError });
+    }
 
     return {
       success: true,
