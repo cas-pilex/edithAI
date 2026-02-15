@@ -89,36 +89,37 @@ export class SecurityAuditWorker extends BaseWorker<SecurityAuditJobData> {
 
     for (const integration of integrations) {
       if (integration.tokenExpiresAt && integration.tokenExpiresAt < now) {
-        expired++;
-
-        // Log security event for expired token
-        await auditService.logSecurityEvent(
-          'TOKEN_REFRESH',
-          integration.userId,
-          {},
-          {
+        // Access token expired — this is normal (they expire every hour).
+        // The OAuthManager will auto-refresh using the refresh token on next API call.
+        // Only deactivate if there is no refresh token at all.
+        if (!integration.refreshTokenEncrypted) {
+          expired++;
+          await auditService.logSecurityEvent(
+            'TOKEN_REFRESH',
+            integration.userId,
+            {},
+            { provider: integration.provider, status: 'expired', action: 'deactivated' }
+          );
+          await prisma.userIntegration.update({
+            where: { id: integration.id },
+            data: { isActive: false, syncStatus: 'FAILED' },
+          });
+        } else {
+          // Has refresh token — keep active, auto-refresh will handle it
+          refreshed++;
+          logger.debug('Token expired but refresh token available', {
+            userId: integration.userId,
             provider: integration.provider,
-            status: 'expired',
-            action: 'deactivated',
-          }
-        );
-
-        // Deactivate the integration (user will need to re-authenticate)
-        await prisma.userIntegration.update({
-          where: { id: integration.id },
-          data: {
-            isActive: false,
-            syncStatus: 'FAILED',
-          },
-        });
+          });
+        }
       } else {
-        // Token is expiring soon - attempt refresh (would need actual refresh logic)
-        logger.info('Token expiring soon', {
+        // Token is expiring soon - OAuthManager auto-refreshes on next API call
+        refreshed++;
+        logger.debug('Token expiring soon, will auto-refresh', {
           userId: integration.userId,
           provider: integration.provider,
           expiresAt: integration.tokenExpiresAt,
         });
-        refreshed++;
       }
     }
 

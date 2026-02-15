@@ -32,8 +32,8 @@ export interface BackoffConfig {
 
 // Provider-specific rate limits
 export const PROVIDER_RATE_LIMITS: Record<string, RateLimitConfig> = {
-  GMAIL: { maxRequests: 250, windowMs: 60000 }, // 250 per minute
-  GOOGLE_CALENDAR: { maxRequests: 500, windowMs: 60000 }, // 500 per minute
+  GMAIL: { maxRequests: 2500, windowMs: 60000 }, // Gmail API: ~50 req/s = 3000/min, keep headroom
+  GOOGLE_CALENDAR: { maxRequests: 1500, windowMs: 60000 }, // Calendar API: high limit
   SLACK: { maxRequests: 50, windowMs: 60000 }, // 50 per minute (Tier 2)
   TELEGRAM: { maxRequests: 30, windowMs: 1000 }, // 30 per second
   WHATSAPP: { maxRequests: 80, windowMs: 60000 }, // 80 per minute
@@ -68,37 +68,23 @@ class RateLimiterImpl {
     const fullKey = `integration:ratelimit:${key}`;
 
     try {
-      const multi = redis.multi();
-      multi.incr(fullKey);
-      multi.ttl(fullKey);
+      const [countStr, ttl] = await Promise.all([
+        redis.get(fullKey),
+        redis.ttl(fullKey),
+      ]);
 
-      const results = await multi.exec();
-      const count = (results?.[0]?.[1] as number) || 1;
-      const ttl = (results?.[1]?.[1] as number) || -1;
-
-      // Set expiry if this is a new key
-      if (ttl === -1) {
-        await redis.expire(fullKey, windowSeconds);
-      }
-
-      const resetAt = Date.now() + (ttl === -1 ? windowSeconds : ttl) * 1000;
-      const allowed = count <= config.maxRequests;
+      const count = countStr ? parseInt(countStr, 10) : 0;
+      const resetAt = Date.now() + (ttl > 0 ? ttl : windowSeconds) * 1000;
+      const allowed = count < config.maxRequests;
       const remaining = Math.max(0, config.maxRequests - count);
 
-      // If not allowed, calculate retry after
       const retryAfter = !allowed
-        ? (config.retryAfterMs || (ttl === -1 ? windowSeconds * 1000 : ttl * 1000))
+        ? (config.retryAfterMs || (ttl > 0 ? ttl * 1000 : config.windowMs))
         : undefined;
-
-      // Decrement count if we're just checking (no request made yet)
-      if (count === 1) {
-        await redis.decr(fullKey);
-      }
 
       return { allowed, remaining, resetAt, retryAfter };
     } catch (error) {
       logger.error('Rate limit check failed', { key, error });
-      // Allow request on error to avoid blocking
       return { allowed: true, remaining: config.maxRequests, resetAt: Date.now() + config.windowMs };
     }
   }

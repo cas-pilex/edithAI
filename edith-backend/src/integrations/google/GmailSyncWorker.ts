@@ -21,7 +21,6 @@ interface EmailCreateData {
   fromName?: string;
   toAddresses: string[];
   ccAddresses: string[];
-  bccAddresses: string[];
   snippet: string;
   bodyText?: string;
   bodyHtml?: string;
@@ -29,7 +28,7 @@ interface EmailCreateData {
   isRead: boolean;
   isStarred: boolean;
   labels: string[];
-  hasAttachments: boolean;
+  attachments: Array<{ filename: string; mimeType: string; size: number }>;
 }
 
 // ============================================================================
@@ -363,9 +362,9 @@ class GmailSyncWorkerImpl {
     const parseAddressList = (value: string | undefined): string[] => {
       if (!value) return [];
       return value.split(',').map(addr => {
-        const match = addr.match(/<(.+?)>/) || [, addr.trim()];
-        return match[1];
-      }).filter(Boolean);
+        const match = addr.match(/<(.+?)>/);
+        return match ? match[1] : addr.trim();
+      }).filter((s): s is string => Boolean(s));
     };
 
     const body = this.extractBody(message);
@@ -379,7 +378,6 @@ class GmailSyncWorkerImpl {
       fromName,
       toAddresses: parseAddressList(headers.get('to')),
       ccAddresses: parseAddressList(headers.get('cc')),
-      bccAddresses: parseAddressList(headers.get('bcc')),
       snippet: message.snippet,
       bodyText: body.text,
       bodyHtml: body.html,
@@ -387,7 +385,7 @@ class GmailSyncWorkerImpl {
       isRead: !message.labelIds.includes('UNREAD'),
       isStarred: message.labelIds.includes('STARRED'),
       labels: message.labelIds,
-      hasAttachments: this.hasAttachments(message),
+      attachments: this.extractAttachments(message),
     };
   }
 
@@ -423,23 +421,28 @@ class GmailSyncWorkerImpl {
     return result;
   }
 
-  private hasAttachments(message: GmailMessage): boolean {
-    const checkParts = (parts: typeof message.payload.parts): boolean => {
-      if (!parts) return false;
+  private extractAttachments(message: GmailMessage): Array<{ filename: string; mimeType: string; size: number }> {
+    const attachments: Array<{ filename: string; mimeType: string; size: number }> = [];
+
+    const checkParts = (parts: typeof message.payload.parts): void => {
+      if (!parts) return;
 
       for (const part of parts) {
-        if (part.body && part.body.size > 0 && part.mimeType !== 'text/plain' && part.mimeType !== 'text/html') {
-          return true;
+        if (part.filename && part.body && part.body.size > 0) {
+          attachments.push({
+            filename: part.filename,
+            mimeType: part.mimeType,
+            size: part.body.size,
+          });
         }
-        if (part.parts && checkParts(part.parts)) {
-          return true;
+        if (part.parts) {
+          checkParts(part.parts);
         }
       }
-
-      return false;
     };
 
-    return checkParts(message.payload.parts);
+    checkParts(message.payload.parts);
+    return attachments;
   }
 }
 

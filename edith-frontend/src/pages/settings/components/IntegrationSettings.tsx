@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api/client';
 
 const integrationDefs = [
-  { key: 'gmail', name: 'Gmail', icon: Mail, description: 'Connect your email for inbox management', connectUrl: '/api/oauth/google?scopes=gmail' },
-  { key: 'google_calendar', name: 'Google Calendar', icon: Calendar, description: 'Sync your calendar events', connectUrl: '/api/oauth/google?scopes=calendar' },
+  { key: 'gmail', name: 'Gmail', icon: Mail, description: 'Connect your email for inbox management', connectUrl: '/api/oauth/google' },
+  { key: 'google_calendar', name: 'Google Calendar', icon: Calendar, description: 'Sync your calendar events', connectUrl: '/api/oauth/google' },
   { key: 'slack', name: 'Slack', icon: MessageSquare, description: 'Get notifications in Slack', connectUrl: '/api/oauth/slack' },
   { key: 'telegram', name: 'Telegram', icon: Send, description: 'Chat with Edith via Telegram', connectUrl: null },
 ];
